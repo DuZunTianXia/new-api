@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +19,7 @@ const (
 // SecureVerificationRequired 安全验证中间件
 // 检查用户是否在有效时间内通过了安全验证
 // 如果未验证或验证已过期，返回 401 错误
+// 超级管理员（Root）不需要验证
 func SecureVerificationRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 检查用户是否已登录
@@ -28,6 +30,13 @@ func SecureVerificationRequired() gin.HandlerFunc {
 				"message": "未登录",
 			})
 			c.Abort()
+			return
+		}
+
+		// 超级管理员（Root）不需要验证
+		role := c.GetInt("role")
+		if role == common.RoleRootUser {
+			c.Next()
 			return
 		}
 
