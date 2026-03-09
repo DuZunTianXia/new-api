@@ -858,7 +858,91 @@ export const useChannelsData = () => {
     }
   };
 
-  // Test channel - 单个模型测试，参考旧版实现
+  // 导出渠道数据
+  const exportChannels = async (format) => {
+    try {
+      // 获取所有渠道数据（不分页）
+      const typeParam = activeTypeKey !== 'all' ? `&type=${activeTypeKey}` : '';
+      const statusParam = statusFilter !== 'all' ? `&status=${statusFilter}` : '';
+      const res = await API.get(
+        `/api/channel/?p=1&page_size=10000&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      );
+      
+      const { success, data } = res.data;
+      if (!success || !data?.items) {
+        showError(t('获取渠道数据失败'));
+        return;
+      }
+
+      const items = data.items;
+      const timestamp = new Date().toISOString().slice(0, 10);
+
+      // 获取每个渠道的密钥（并行获取）
+      const itemsWithKeys = await Promise.all(
+        items.map(async (ch) => {
+          try {
+            const keyRes = await API.post(`/api/channel/${ch.id}/key`, {});
+            if (keyRes.data.success) {
+              return { ...ch, apiKey: keyRes.data.data?.key || '' };
+            }
+          } catch (e) {
+            // 获取失败则返回空密钥
+          }
+          return { ...ch, apiKey: '' };
+        })
+      );
+
+      if (format === 'txt') {
+        // 导出为 TXT 格式 - 每行一个渠道，包含关键信息
+        const lines = itemsWithKeys.map((ch) => {
+          const status = ch.status === 1 ? '已启用' : '已禁用';
+          const keys = ch.apiKey ? ch.apiKey.split('\n').filter(k => k.trim()) : [];
+          return `ID:${ch.id} | 名称:${ch.name} | 类型:${ch.type} | 状态:${status} | 分组:${ch.group || '-'} | 密钥:${keys.join(', ')} | 模型:${ch.models || '-'}`;
+        });
+        const content = lines.join('\n');
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `channels_${timestamp}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else if (format === 'json') {
+        // 导出为 JSON 格式 - 完整的渠道数据（中文字段名）
+        const exportData = itemsWithKeys.map((ch) => ({
+          渠道ID: ch.id,
+          渠道名称: ch.name,
+          API密钥: ch.apiKey ? ch.apiKey.split('\n').filter(k => k.trim()) : [],
+          渠道类型: ch.type,
+          渠道状态: ch.status === 1 ? '已启用' : '已禁用',
+          所属分组: ch.group,
+          模型列表: ch.models ? ch.models.split(',') : [],
+          优先级: ch.priority,
+          权重: ch.weight,
+          响应时间: ch.response_time,
+          余额: ch.balance,
+          标签: ch.tag,
+          基础URL: ch.base_url,
+          创建时间: ch.created_at,
+        }));
+        const json = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `channels_${timestamp}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+      showSuccess(t('导出成功'));
+    } catch (error) {
+      showError(error.message || t('导出失败'));
+    }
+  };
   const testChannel = async (
     record,
     model,
@@ -1237,6 +1321,7 @@ export const useChannelsData = () => {
     batchTestModels,
     handleCloseModal,
     getFormValues,
+    exportChannels,
 
     // Column functions
     handleColumnVisibilityChange,

@@ -57,6 +57,7 @@ const ChannelsActions = ({
   pageSize,
   setActivePage,
   t,
+  exportChannels,
 }) => {
   return (
     <div className='flex flex-col gap-2'>
@@ -220,6 +221,45 @@ const ChannelsActions = ({
               className='w-full md:w-auto'
             >
               {t('批量操作')}
+            </Button>
+          </Dropdown>
+
+          <Dropdown
+            size='small'
+            trigger='click'
+            position='bottomLeft'
+            render={
+              <Dropdown.Menu>
+                <Dropdown.Item>
+                  <Button
+                    size='small'
+                    type='tertiary'
+                    className='w-full'
+                    onClick={() => exportChannels('txt')}
+                  >
+                    {t('导出为 TXT')}
+                  </Button>
+                </Dropdown.Item>
+                <Dropdown.Item>
+                  <Button
+                    size='small'
+                    type='tertiary'
+                    className='w-full'
+                    onClick={() => exportChannels('json')}
+                  >
+                    {t('导出为 JSON')}
+                  </Button>
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            }
+          >
+            <Button
+              size='small'
+              theme='light'
+              type='tertiary'
+              className='w-full md:w-auto'
+            >
+              {t('导出')}
             </Button>
           </Dropdown>
 

@@ -3993,6 +3993,13 @@ const EditChannelModal = (props) => {
           warningText={t(
             '请妥善保管密钥信息，不要泄露给他人。如有安全疑虑，请及时更换密钥。',
           )}
+          channelId={channelId}
+          onKeyDeleted={() => {
+            // 删除后重新加载渠道数据并刷新密钥显示
+            loadChannel();
+            // 重新获取密钥
+            handleShow2FAModal();
+          }}
         />
       </Modal>
 

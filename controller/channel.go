@@ -415,6 +415,113 @@ func GetChannelKey(c *gin.Context) {
 	})
 }
 
+// DeleteChannelKeyRequest 删除渠道密钥请求
+type DeleteChannelKeyRequest struct {
+	Password string `json:"password"` // 当前用户密码
+}
+
+// DeleteChannelKey 删除渠道密钥（需要密码验证）
+// 此操作会清空渠道的密钥字段，需要验证当前用户的密码
+func DeleteChannelKey(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "未登录",
+		})
+		return
+	}
+
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("渠道ID格式错误: %v", err))
+		return
+	}
+
+	var req DeleteChannelKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "参数错误: 请提供密码",
+		})
+		return
+	}
+
+	if req.Password == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "密码不能为空",
+		})
+		return
+	}
+
+	// 获取当前用户信息以验证密码
+	user, err := model.GetUserById(userId, true)
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("获取用户信息失败: %v", err))
+		return
+	}
+
+	// 验证密码
+	if !common.ValidatePasswordAndHash(req.Password, user.Password) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "密码验证失败",
+		})
+		return
+	}
+
+	// 获取渠道信息
+	channel, err := model.GetChannelById(channelId, true)
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("获取渠道信息失败: %v", err))
+		return
+	}
+
+	if channel == nil {
+		common.ApiError(c, fmt.Errorf("渠道不存在"))
+		return
+	}
+
+	// 检查渠道是否已有密钥
+	if channel.Key == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "渠道没有密钥可删除",
+		})
+		return
+	}
+
+	// 清空密钥
+	channel.Key = ""
+	// 重置多密钥相关信息
+	channel.ChannelInfo.IsMultiKey = false
+	channel.ChannelInfo.MultiKeySize = 0
+	channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
+	channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
+	channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
+	channel.ChannelInfo.MultiKeyPollingIndex = 0
+
+	// 更新渠道
+	err = channel.Update()
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("删除密钥失败: %v", err))
+		return
+	}
+
+	// 刷新缓存
+	model.InitChannelCache()
+	service.ResetProxyClientCache()
+
+	// 记录操作日志
+	model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf("删除渠道密钥 (渠道ID: %d)", channelId))
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "密钥已删除",
+	})
+}
+
 // validateTwoFactorAuth 统一的2FA验证函数
 func validateTwoFactorAuth(twoFA *model.TwoFA, code string) bool {
 	// 尝试验证TOTP
@@ -1215,6 +1322,7 @@ type MultiKeyManageRequest struct {
 	Page      int    `json:"page,omitempty"`      // for get_key_status pagination
 	PageSize  int    `json:"page_size,omitempty"` // for get_key_status pagination
 	Status    *int   `json:"status,omitempty"`    // for get_key_status filtering: 1=enabled, 2=manual_disabled, 3=auto_disabled, nil=all
+	Password  string `json:"password,omitempty"`  // for delete_key action verification
 }
 
 // MultiKeyStatusResponse represents the response for key status query
@@ -1540,6 +1648,40 @@ func ManageMultiKeys(c *gin.Context) {
 		return
 
 	case "delete_key":
+		// 验证密码
+		if request.Password == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "密码不能为空",
+			})
+			return
+		}
+
+		// 获取当前用户信息以验证密码
+		userId := c.GetInt("id")
+		if userId == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "未登录",
+			})
+			return
+		}
+
+		user, err := model.GetUserById(userId, true)
+		if err != nil {
+			common.ApiError(c, fmt.Errorf("获取用户信息失败: %v", err))
+			return
+		}
+
+		// 验证密码
+		if !common.ValidatePasswordAndHash(request.Password, user.Password) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "密码验证失败",
+			})
+			return
+		}
+
 		if request.KeyIndex == nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,

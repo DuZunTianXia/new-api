@@ -17,10 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Button, Typography, Tag } from '@douyinfe/semi-ui';
-import { copy, showSuccess } from '../../../helpers';
+import { Card, Button, Typography, Tag, Modal, Input, Dropdown } from '@douyinfe/semi-ui';
+import { copy, showSuccess, showError, API } from '../../../helpers';
 
 /**
  * 解析密钥数据，支持多种格式
@@ -82,6 +82,8 @@ const parseChannelKeys = (keyData, t) => {
  * @param {string} props.successText - 成功文本
  * @param {boolean} props.showWarning - 是否显示安全警告
  * @param {string} props.warningText - 警告文本
+ * @param {number} props.channelId - 渠道ID（用于删除密钥）
+ * @param {Function} props.onKeyDeleted - 删除密钥后的回调
  */
 const ChannelKeyDisplay = ({
   keyData,
@@ -89,8 +91,14 @@ const ChannelKeyDisplay = ({
   successText,
   showWarning = true,
   warningText,
+  channelId,
+  onKeyDeleted,
 }) => {
   const { t } = useTranslation();
+  const [deletingIndex, setDeletingIndex] = useState(null);
+  const [password, setPassword] = useState('');
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [keyToDelete, setKeyToDelete] = useState(null);
 
   const parsedKeys = parseChannelKeys(keyData, t);
   const isMultipleKeys = parsedKeys.length > 1;
@@ -103,6 +111,85 @@ const ChannelKeyDisplay = ({
   const handleCopyKey = (content) => {
     copy(content);
     showSuccess(t('密钥已复制到剪贴板'));
+  };
+
+  // 导出为 TXT 格式
+  const handleExportTxt = () => {
+    const keys = parsedKeys.map((key) => key.content).join('\n');
+    const blob = new Blob([keys], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `channel_keys_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSuccess(t('导出成功'));
+  };
+
+  // 导出为 JSON 格式
+  const handleExportJson = () => {
+    const keysData = parsedKeys.map((key, index) => ({
+      id: index,
+      label: key.label,
+      content: key.content,
+      type: key.type,
+    }));
+    const json = JSON.stringify(keysData, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `channel_keys_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSuccess(t('导出成功'));
+  };
+
+  const handleDeleteClick = (keyItem) => {
+    if (!channelId) {
+      showError(t('无法删除：缺少渠道ID'));
+      return;
+    }
+    setKeyToDelete(keyItem);
+    setPassword('');
+    setPasswordModalVisible(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!password) {
+      showError(t('请输入密码'));
+      return;
+    }
+    if (!keyToDelete) return;
+
+    setDeletingIndex(keyToDelete.id);
+    try {
+      const res = await API.post('/api/channel/multi_key/manage', {
+        channel_id: channelId,
+        action: 'delete_key',
+        key_index: keyToDelete.id,
+        password: password,
+      });
+      if (res.data.success) {
+        showSuccess(t('密钥已删除'));
+        setPasswordModalVisible(false);
+        setPassword('');
+        if (onKeyDeleted) {
+          onKeyDeleted();
+        }
+      } else {
+        showError(res.data.message || t('删除失败'));
+      }
+    } catch (error) {
+      showError(error.message || t('删除失败'));
+    } finally {
+      setDeletingIndex(null);
+      setKeyToDelete(null);
+    }
   };
 
   return (
@@ -138,14 +225,54 @@ const ChannelKeyDisplay = ({
               <Typography.Text type='tertiary' size='small'>
                 {t('共 {{count}} 个密钥', { count: parsedKeys.length })}
               </Typography.Text>
-              <Button
-                size='small'
-                type='primary'
-                theme='outline'
-                onClick={handleCopyAll}
-              >
-                {t('复制全部')}
-              </Button>
+              {isMultipleKeys && (
+                <div className='flex gap-2'>
+                  <Dropdown
+                    position='bottomLeft'
+                    menu={[
+                      {
+                        node: 'item',
+                        text: t('导出为 TXT'),
+                        onClick: handleExportTxt,
+                      },
+                      {
+                        node: 'item',
+                        text: t('导出为 JSON'),
+                        onClick: handleExportJson,
+                      },
+                    ]}
+                  >
+                    <Button
+                      size='small'
+                      type='primary'
+                      theme='outline'
+                      icon={
+                        <svg
+                          className='w-3 h-3'
+                          fill='currentColor'
+                          viewBox='0 0 20 20'
+                        >
+                          <path
+                            fillRule='evenodd'
+                            d='M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z'
+                            clipRule='evenodd'
+                          />
+                        </svg>
+                      }
+                    >
+                      {t('导出')}
+                    </Button>
+                  </Dropdown>
+                  <Button
+                    size='small'
+                    type='tertiary'
+                    theme='outline'
+                    onClick={handleCopyAll}
+                  >
+                    {t('复制全部')}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -170,6 +297,17 @@ const ChannelKeyDisplay = ({
                       <Tag size='small' color='blue'>
                         {t('JSON')}
                       </Tag>
+                    )}
+                    {channelId && parsedKeys.length > 1 && (
+                      <Button
+                        size='small'
+                        type='danger'
+                        theme='outline'
+                        loading={deletingIndex === keyItem.id}
+                        onClick={() => handleDeleteClick(keyItem)}
+                      >
+                        {t('删除')}
+                      </Button>
                     )}
                     <Button
                       size='small'
@@ -273,6 +411,49 @@ const ChannelKeyDisplay = ({
           </div>
         </div>
       )}
+      {/* 密码验证模态框 */}
+      <Modal
+        title={t('验证密码以删除密钥')}
+        visible={passwordModalVisible}
+        onCancel={() => {
+          setPasswordModalVisible(false);
+          setPassword('');
+          setKeyToDelete(null);
+        }}
+        footer={
+          <>
+            <Button
+              type='tertiary'
+              onClick={() => {
+                setPasswordModalVisible(false);
+                setPassword('');
+                setKeyToDelete(null);
+              }}
+            >
+              {t('取消')}
+            </Button>
+            <Button
+              type='danger'
+              loading={deletingIndex !== null}
+              onClick={handleConfirmDelete}
+            >
+              {t('确认删除')}
+            </Button>
+          </>
+        }
+      >
+        <div className='mb-4'>
+          <Typography.Text type='warning'>
+            {keyToDelete && t('您即将删除 {{label}}，此操作不可恢复。', { label: keyToDelete.label })}
+          </Typography.Text>
+        </div>
+        <Input
+          type='password'
+          placeholder={t('请输入您的账户密码')}
+          value={password}
+          onChange={(value) => setPassword(value)}
+        />
+      </Modal>
     </div>
   );
 };
