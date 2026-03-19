@@ -3293,6 +3293,25 @@
     "5m缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m缓存创建倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}": "5m cache creation: {{tokens}} / 1M * model ratio {{modelRatio}} * 5m cache creation ratio {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}",
     "1h缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h缓存创建倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}": "1h cache creation: {{tokens}} / 1M * model ratio {{modelRatio}} * 1h cache creation ratio {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}",
     "输出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 输出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}": "Output: {{tokens}} / 1M * model ratio {{modelRatio}} * output ratio {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}",
-    "空": "Empty"
+    "空": "Empty",
+    "竞速请求设置": "Race Request Settings",
+    "竞速请求功能可以同时向多个渠道发送请求，返回最快的响应，提高响应速度。": "Race request feature sends concurrent requests to multiple channels and returns the fastest response.",
+    "启用竞速请求": "Enable Race Request",
+    "启用后，系统将同时向多个渠道发送请求，返回最快的响应。": "When enabled, the system will send concurrent requests to multiple channels and return the fastest response.",
+    "并发数量": "Concurrency",
+    "同时发送请求的渠道数量（1-5）。": "Number of channels to send concurrent requests (1-5).",
+    "启用流式请求竞速": "Enable Stream Race",
+    "是否对流式请求启用竞速功能。": "Whether to enable race request for streaming requests.",
+    "启用非流式请求竞速": "Enable Non-Stream Race",
+    "是否对非流式请求启用竞速功能。": "Whether to enable race request for non-streaming requests.",
+    "超时时间（毫秒）": "Timeout (ms)",
+    "竞速请求的超时时间，超过此时间未获得响应则取消所有请求。": "Race request timeout. All requests will be cancelled if no response is received within this time.",
+    "竞速请求": "Race Request",
+    "设置该渠道是否参与竞速请求。跟随全局设置将使用运营设置中的配置。": "Set whether this channel participates in race requests. Follow global setting will use the operation settings configuration.",
+    "设置该令牌是否启用竞速请求。跟随全局设置将使用运营设置中的配置。": "Set whether this token enables race requests. Follow global setting will use the operation settings configuration.",
+    "竞速并发数": "Race Concurrency",
+    "该渠道的竞速请求并发数（0使用全局设置，1-5为独立设置）": "The concurrency number for this channel's race requests (0 to use global setting, 1-5 for independent setting)",
+    "启用": "Enable",
+    "禁用": "Disable"
   }
 }

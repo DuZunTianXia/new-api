@@ -177,6 +177,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}()
 
+	// 尝试竞速请求
+	raceErr := service.RaceRequestHelper(c, relayInfo, relayFormat, priceData)
+	if raceErr != nil {
+		// 竞速请求失败，回退到正常流程
+		logger.LogError(c, fmt.Sprintf("race request failed, fallback to normal flow: %s", raceErr.Error()))
+	} else if len(c.GetStringSlice("use_channel")) > 0 {
+		// 竞速请求成功
+		return
+	}
+
 	retryParam := &service.RetryParam{
 		Ctx:        c,
 		TokenGroup: relayInfo.TokenGroup,

@@ -263,3 +263,66 @@ func CacheUpdateChannel(channel *Channel) {
 	channelsIDM[channel.Id] = channel
 	println("after :", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
 }
+
+// GetRaceChannelsForGroupFromCache 从缓存获取竞速渠道
+// 返回指定数量的不同渠道（按优先级选择）
+func GetRaceChannelsForGroupFromCache(group string, modelName string, count int) []*Channel {
+	if !common.MemoryCacheEnabled {
+		// 如果内存缓存未启用，从数据库获取单个渠道
+		channel, err := GetChannel(group, modelName, 0)
+		if err != nil || channel == nil {
+			return nil
+		}
+		return []*Channel{channel}
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channels := group2model2channels[group][modelName]
+	if len(channels) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(modelName)
+		channels = group2model2channels[group][normalizedModel]
+	}
+
+	if len(channels) == 0 {
+		return nil
+	}
+
+	// 按优先级分组
+	priorityChannels := make(map[int64][]*Channel)
+	for _, channelId := range channels {
+		if channel, ok := channelsIDM[channelId]; ok {
+			priority := channel.GetPriority()
+			priorityChannels[priority] = append(priorityChannels[priority], channel)
+		}
+	}
+
+	// 按优先级降序排序
+	var priorities []int64
+	for p := range priorityChannels {
+		priorities = append(priorities, p)
+	}
+	sort.Slice(priorities, func(i, j int) bool {
+		return priorities[i] > priorities[j]
+	})
+
+	// 从最高优先级开始选择渠道
+	var result []*Channel
+	for _, priority := range priorities {
+		priorityChs := priorityChannels[priority]
+		// 随机打乱同优先级的渠道
+		rand.Shuffle(len(priorityChs), func(i, j int) {
+			priorityChs[i], priorityChs[j] = priorityChs[j], priorityChs[i]
+		})
+		for len(result) < count && len(priorityChs) > 0 {
+			result = append(result, priorityChs[0])
+			priorityChs = priorityChs[1:]
+		}
+		if len(result) >= count {
+			break
+		}
+	}
+
+	return result
+}

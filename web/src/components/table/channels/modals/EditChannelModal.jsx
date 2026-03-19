@@ -209,6 +209,9 @@ const EditChannelModal = (props) => {
     upstream_model_update_last_check_time: 0,
     upstream_model_update_last_detected_models: [],
     upstream_model_update_ignored_models: '',
+    // 竞速请求设置
+    race_request_enabled: 0, // 0: 跟随全局设置, 1: 启用, 2: 禁用
+    race_request_concurrency: 0, // 0: 使用全局设置, >0: 该渠道的并发数
   };
   const [batch, setBatch] = useState(false);
   const [multiToSingle, setMultiToSingle] = useState(false);
@@ -3453,6 +3456,42 @@ const EditChannelModal = (props) => {
                         '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
                       )}
                       initValue={autoBan}
+                    />
+
+                    <Form.Select
+                      field='race_request_enabled'
+                      label={t('竞速请求')}
+                      style={{ width: '100%' }}
+                      onChange={(value) =>
+                        handleInputChange('race_request_enabled', value)
+                      }
+                      extraText={t(
+                        '设置该渠道是否参与竞速请求。跟随全局设置将使用运营设置中的配置。',
+                      )}
+                    >
+                      <Form.Select.Option value={0}>
+                        {t('跟随全局设置')}
+                      </Form.Select.Option>
+                      <Form.Select.Option value={1}>
+                        {t('启用')}
+                      </Form.Select.Option>
+                      <Form.Select.Option value={2}>
+                        {t('禁用')}
+                      </Form.Select.Option>
+                    </Form.Select>
+
+                    <Form.InputNumber
+                      field='race_request_concurrency'
+                      label={t('竞速并发数')}
+                      min={0}
+                      max={5}
+                      style={{ width: '100%' }}
+                      extraText={t(
+                        '该渠道的竞速请求并发数（0使用全局设置，1-5为独立设置）',
+                      )}
+                      onNumberChange={(value) =>
+                        handleInputChange('race_request_concurrency', value)
+                      }
                     />
 
                     <Form.Switch

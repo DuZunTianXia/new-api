@@ -75,6 +75,7 @@ const EditTokenModal = (props) => {
     group: '',
     cross_group_retry: false,
     tokenCount: 1,
+    race_request_enabled: 0, // 0: 跟随全局设置, 1: 启用, 2: 禁用
   });
 
   const handleCancel = () => {
@@ -572,6 +573,26 @@ const EditTokenModal = (props) => {
                       showClear
                       style={{ width: '100%' }}
                     />
+                  </Col>
+                  <Col span={24}>
+                    <Form.Select
+                      field='race_request_enabled'
+                      label={t('竞速请求')}
+                      style={{ width: '100%' }}
+                      extraText={t(
+                        '设置该令牌是否启用竞速请求。跟随全局设置将使用运营设置中的配置。',
+                      )}
+                    >
+                      <Form.Select.Option value={0}>
+                        {t('跟随全局设置')}
+                      </Form.Select.Option>
+                      <Form.Select.Option value={1}>
+                        {t('启用')}
+                      </Form.Select.Option>
+                      <Form.Select.Option value={2}>
+                        {t('禁用')}
+                      </Form.Select.Option>
+                    </Form.Select>
                   </Col>
                 </Row>
               </Card>

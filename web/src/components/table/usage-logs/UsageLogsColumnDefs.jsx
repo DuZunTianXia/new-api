@@ -192,6 +192,10 @@ function renderUseTime(type, t) {
 
 function renderFirstUseTime(type, t) {
   let time = parseFloat(type) / 1000.0;
+  // 处理 NaN 或无效值
+  if (isNaN(time) || !isFinite(time) || time < 0) {
+    return null; // 不显示首字时间
+  }
   time = time.toFixed(1);
   if (time < 3) {
     return (

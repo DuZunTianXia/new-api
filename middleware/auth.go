@@ -389,6 +389,12 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
+	// 设置 Token 的竞速请求配置
+	if token.RaceRequestEnabled != nil {
+		c.Set("token_race_request_enabled", *token.RaceRequestEnabled)
+	} else {
+		c.Set("token_race_request_enabled", 0) // 默认跟随全局设置
+	}
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			c.Set("specific_channel_id", parts[1])

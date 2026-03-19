@@ -26,6 +26,7 @@ import ModelRatioSettings from '../../pages/Setting/Ratio/ModelRatioSettings';
 import ModelSettingsVisualEditor from '../../pages/Setting/Ratio/ModelSettingsVisualEditor';
 import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetEditor';
 import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
+import ModelRatioBatchEditor from '../../pages/Setting/Ratio/ModelRatioBatchEditor';
 
 import { API, showError, toBoolean } from '../../helpers';
 
@@ -97,7 +98,10 @@ const RatioSetting = () => {
     <Spin spinning={loading} size='large'>
       {/* 模型倍率设置以及价格编辑器 */}
       <Card style={{ marginTop: '10px' }}>
-        <Tabs type='card' defaultActiveKey='visual'>
+        <Tabs type='card' defaultActiveKey='batch'>
+          <Tabs.TabPane tab={t('模型倍率批量设置')} itemKey='batch'>
+            <ModelRatioBatchEditor options={inputs} refresh={onRefresh} />
+          </Tabs.TabPane>
           <Tabs.TabPane tab={t('模型倍率设置')} itemKey='model'>
             <ModelRatioSettings options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>

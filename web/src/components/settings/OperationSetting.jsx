@@ -27,6 +27,7 @@ import SettingsLog from '../../pages/Setting/Operation/SettingsLog';
 import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring';
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
+import SettingsRaceRequest from '../../pages/Setting/Operation/SettingsRaceRequest';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -81,6 +82,13 @@ const OperationSetting = () => {
 
     /* 令牌设置 */
     'token_setting.max_user_tokens': 1000,
+
+    /* 竞速请求设置 */
+    'race_request_setting.enabled': false,
+    'race_request_setting.concurrency': 2,
+    'race_request_setting.stream_enabled': true,
+    'race_request_setting.non_stream_enabled': false,
+    'race_request_setting.timeout_ms': 30000,
   });
 
   let [loading, setLoading] = useState(false);
@@ -153,6 +161,10 @@ const OperationSetting = () => {
         {/* 签到设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsCheckin options={inputs} refresh={onRefresh} />
+        </Card>
+        {/* 竞速请求设置 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsRaceRequest options={inputs} refresh={onRefresh} />
         </Card>
       </Spin>
     </>

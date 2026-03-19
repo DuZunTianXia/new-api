@@ -53,6 +53,10 @@ type Channel struct {
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
+	// 竞速请求设置
+	RaceRequestEnabled     *int `json:"race_request_enabled" gorm:"default:0"`     // 0: 跟随全局设置, 1: 启用, 2: 禁用
+	RaceRequestConcurrency *int `json:"race_request_concurrency" gorm:"default:0"` // 0: 使用全局设置, >0: 该渠道的并发数
+
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
 }
