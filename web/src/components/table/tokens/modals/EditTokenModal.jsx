@@ -76,6 +76,10 @@ const EditTokenModal = (props) => {
     cross_group_retry: false,
     tokenCount: 1,
     race_request_enabled: 0, // 0: 跟随全局设置, 1: 启用, 2: 禁用
+    type: 0, // 0: 普通令牌, 1: 激活式令牌
+    expire_duration_days: 0,
+    expire_duration_hours: 0,
+    expire_duration_minutes: 0,
   });
 
   const handleCancel = () => {
@@ -163,6 +167,15 @@ const EditTokenModal = (props) => {
       } else {
         data.model_limits = [];
       }
+      // 激活式令牌回显
+      if (data.type === 1 && data.expire_duration > 0) {
+        const totalSeconds = data.expire_duration;
+        data.expire_duration_days = Math.floor(totalSeconds / (24 * 60 * 60));
+        const remainingAfterDays = totalSeconds % (24 * 60 * 60);
+        data.expire_duration_hours = Math.floor(remainingAfterDays / (60 * 60));
+        const remainingAfterHours = remainingAfterDays % (60 * 60);
+        data.expire_duration_minutes = Math.floor(remainingAfterHours / 60);
+      }
       if (formApiRef.current) {
         formApiRef.current.setValues({ ...getInitValues(), ...data });
       }
@@ -208,8 +221,24 @@ const EditTokenModal = (props) => {
 
   const submit = async (values) => {
     setLoading(true);
+    // 处理激活式令牌逻辑：从天/小时/分钟计算总秒数
+    const days = parseInt(values.expire_duration_days) || 0;
+    const hours = parseInt(values.expire_duration_hours) || 0;
+    const minutes = parseInt(values.expire_duration_minutes) || 0;
+    const totalSeconds = days * 24 * 60 * 60 + hours * 60 * 60 + minutes * 60;
+
+    let { tokenCount: _tc, expire_duration_days, expire_duration_hours, expire_duration_minutes, ...localInputs } = values;
+    if (localInputs.type === 1 && totalSeconds > 0) {
+      // 激活式令牌：过期时间由首次使用时动态计算，这里设为 -1
+      localInputs.expired_time = -1;
+      localInputs.expire_duration = totalSeconds;
+    } else {
+      // 非激活式令牌：清空 expire_duration
+      localInputs.expire_duration = 0;
+      localInputs.type = 0;
+    }
+
     if (isEdit) {
-      let { tokenCount: _tc, ...localInputs } = values;
       localInputs.remain_quota = parseInt(localInputs.remain_quota);
       if (localInputs.expired_time !== -1) {
         let time = Date.parse(localInputs.expired_time);
@@ -238,28 +267,36 @@ const EditTokenModal = (props) => {
       const count = parseInt(values.tokenCount, 10) || 1;
       let successCount = 0;
       for (let i = 0; i < count; i++) {
-        let { tokenCount: _tc, ...localInputs } = values;
+        let { tokenCount: _tc2, expire_duration_days: _d, expire_duration_hours: _h, expire_duration_minutes: _m, ...loopLocalInputs } = values;
+        // 重新处理每个循环的激活逻辑
+        if (loopLocalInputs.type === 1 && totalSeconds > 0) {
+          loopLocalInputs.expired_time = -1;
+          loopLocalInputs.expire_duration = totalSeconds;
+        } else {
+          loopLocalInputs.expire_duration = 0;
+          loopLocalInputs.type = 0;
+        }
         const baseName =
           values.name.trim() === '' ? 'default' : values.name.trim();
         if (i !== 0 || values.name.trim() === '') {
-          localInputs.name = `${baseName}-${generateRandomSuffix()}`;
+          loopLocalInputs.name = `${baseName}-${generateRandomSuffix()}`;
         } else {
-          localInputs.name = baseName;
+          loopLocalInputs.name = baseName;
         }
-        localInputs.remain_quota = parseInt(localInputs.remain_quota);
+        loopLocalInputs.remain_quota = parseInt(loopLocalInputs.remain_quota);
 
-        if (localInputs.expired_time !== -1) {
-          let time = Date.parse(localInputs.expired_time);
+        if (loopLocalInputs.expired_time !== -1) {
+          let time = Date.parse(loopLocalInputs.expired_time);
           if (isNaN(time)) {
             showError(t('过期时间格式错误！'));
             setLoading(false);
             break;
           }
-          localInputs.expired_time = Math.ceil(time / 1000);
+          loopLocalInputs.expired_time = Math.ceil(time / 1000);
         }
-        localInputs.model_limits = localInputs.model_limits.join(',');
-        localInputs.model_limits_enabled = localInputs.model_limits.length > 0;
-        let res = await API.post(`/api/token/`, localInputs);
+        loopLocalInputs.model_limits = loopLocalInputs.model_limits.join(',');
+        loopLocalInputs.model_limits_enabled = loopLocalInputs.model_limits.length > 0;
+        let res = await API.post(`/api/token/`, loopLocalInputs);
         const { success, message } = res.data;
         if (success) {
           successCount++;
@@ -394,70 +431,188 @@ const EditTokenModal = (props) => {
                       )}
                     />
                   </Col>
-                  <Col xs={24} sm={24} md={24} lg={10} xl={10}>
-                    <Form.DatePicker
-                      field='expired_time'
-                      label={t('过期时间')}
-                      type='dateTime'
-                      placeholder={t('请选择过期时间')}
-                      rules={[
-                        { required: true, message: t('请选择过期时间') },
-                        {
-                          validator: (rule, value) => {
-                            // 允许 -1 表示永不过期，也允许空值在必填校验时被拦截
-                            if (value === -1 || !value)
-                              return Promise.resolve();
-                            const time = Date.parse(value);
-                            if (isNaN(time)) {
-                              return Promise.reject(t('过期时间格式错误！'));
-                            }
-                            if (time <= Date.now()) {
-                              return Promise.reject(
-                                t('过期时间不能早于当前时间！'),
-                              );
-                            }
-                            return Promise.resolve();
-                          },
-                        },
-                      ]}
-                      showClear
+                  <Col span={24}>
+                    <Form.Select
+                      field='type'
+                      label={t('令牌类型')}
                       style={{ width: '100%' }}
-                    />
+                      extraText={
+                        values.type === 1
+                          ? t('激活式令牌在首次调用API时才会激活并开始计算有效期')
+                          : t('普通令牌创建后立即开始计算有效期')
+                      }
+                    >
+                      <Form.Select.Option value={0}>
+                        {t('普通令牌')}
+                      </Form.Select.Option>
+                      <Form.Select.Option value={1}>
+                        {t('激活式令牌')}
+                      </Form.Select.Option>
+                    </Form.Select>
                   </Col>
-                  <Col xs={24} sm={24} md={24} lg={14} xl={14}>
-                    <Form.Slot label={t('过期时间快捷设置')}>
-                      <Space wrap>
-                        <Button
-                          theme='light'
-                          type='primary'
-                          onClick={() => setExpiredTime(0, 0, 0, 0)}
-                        >
-                          {t('永不过期')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          onClick={() => setExpiredTime(1, 0, 0, 0)}
-                        >
-                          {t('一个月')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          onClick={() => setExpiredTime(0, 1, 0, 0)}
-                        >
-                          {t('一天')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          onClick={() => setExpiredTime(0, 0, 1, 0)}
-                        >
-                          {t('一小时')}
-                        </Button>
-                      </Space>
-                    </Form.Slot>
-                  </Col>
+                  {/* 普通令牌：显示日期选择器 */}
+                  {values.type === 0 && (
+                    <>
+                      <Col xs={24} sm={24} md={24} lg={10} xl={10}>
+                        <Form.DatePicker
+                          field='expired_time'
+                          label={t('过期时间')}
+                          type='dateTime'
+                          placeholder={t('请选择过期时间')}
+                          rules={[
+                            { required: true, message: t('请选择过期时间') },
+                            {
+                              validator: (rule, value) => {
+                                if (value === -1 || !value)
+                                  return Promise.resolve();
+                                const time = Date.parse(value);
+                                if (isNaN(time)) {
+                                  return Promise.reject(t('过期时间格式错误！'));
+                                }
+                                if (time <= Date.now()) {
+                                  return Promise.reject(
+                                    t('过期时间不能早于当前时间！'),
+                                  );
+                                }
+                                return Promise.resolve();
+                              },
+                            },
+                          ]}
+                          showClear
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+                      <Col xs={24} sm={24} md={24} lg={14} xl={14}>
+                        <Form.Slot label={t('过期时间快捷设置')}>
+                          <Space wrap>
+                            <Button
+                              theme='light'
+                              type='primary'
+                              onClick={() => setExpiredTime(0, 0, 0, 0)}
+                            >
+                              {t('永不过期')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => setExpiredTime(1, 0, 0, 0)}
+                            >
+                              {t('一个月')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => setExpiredTime(0, 1, 0, 0)}
+                            >
+                              {t('一天')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => setExpiredTime(0, 0, 1, 0)}
+                            >
+                              {t('一小时')}
+                            </Button>
+                          </Space>
+                        </Form.Slot>
+                      </Col>
+                    </>
+                  )}
+                  {/* 激活式令牌：显示有效期设置 */}
+                  {values.type === 1 && (
+                    <>
+                      <Col span={24}>
+                        <Form.Slot label={t('有效期设置（首次使用后开始计时）')}>
+                          <Space wrap align='start'>
+                            <Form.InputNumber
+                              field='expire_duration_days'
+                              label={t('天')}
+                              min={0}
+                              style={{ width: 80 }}
+                              rules={[{ required: true, message: t('请输入天数') }]}
+                            />
+                            <Form.InputNumber
+                              field='expire_duration_hours'
+                              label={t('小时')}
+                              min={0}
+                              max={23}
+                              style={{ width: 80 }}
+                              rules={[{ required: true, message: t('请输入小时') }]}
+                            />
+                            <Form.InputNumber
+                              field='expire_duration_minutes'
+                              label={t('分钟')}
+                              min={0}
+                              max={59}
+                              style={{ width: 80 }}
+                              rules={[{ required: true, message: t('请输入分钟') }]}
+                            />
+                          </Space>
+                        </Form.Slot>
+                      </Col>
+                      <Col span={24}>
+                        <Form.Slot label={t('快捷设置')}>
+                          <Space wrap>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => {
+                                formApiRef.current?.setValue('expire_duration_days', 30);
+                                formApiRef.current?.setValue('expire_duration_hours', 0);
+                                formApiRef.current?.setValue('expire_duration_minutes', 0);
+                              }}
+                            >
+                              {t('一个月')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => {
+                                formApiRef.current?.setValue('expire_duration_days', 7);
+                                formApiRef.current?.setValue('expire_duration_hours', 0);
+                                formApiRef.current?.setValue('expire_duration_minutes', 0);
+                              }}
+                            >
+                              {t('一周')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => {
+                                formApiRef.current?.setValue('expire_duration_days', 1);
+                                formApiRef.current?.setValue('expire_duration_hours', 0);
+                                formApiRef.current?.setValue('expire_duration_minutes', 0);
+                              }}
+                            >
+                              {t('一天')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => {
+                                formApiRef.current?.setValue('expire_duration_days', 0);
+                                formApiRef.current?.setValue('expire_duration_hours', 1);
+                                formApiRef.current?.setValue('expire_duration_minutes', 0);
+                              }}
+                            >
+                              {t('一小时')}
+                            </Button>
+                            <Button
+                              theme='light'
+                              type='tertiary'
+                              onClick={() => {
+                                formApiRef.current?.setValue('expire_duration_days', 0);
+                                formApiRef.current?.setValue('expire_duration_hours', 0);
+                                formApiRef.current?.setValue('expire_duration_minutes', 30);
+                              }}
+                            >
+                              {t('30分钟')}
+                            </Button>
+                          </Space>
+                        </Form.Slot>
+                      </Col>
+                    </>
+                  )}
                   {!isEdit && (
                     <Col span={24}>
                       <Form.InputNumber

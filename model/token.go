@@ -31,6 +31,12 @@ type Token struct {
 	// 竞速请求设置
 	RaceRequestEnabled *int           `json:"race_request_enabled" gorm:"default:0"` // 0: 跟随全局设置, 1: 启用, 2: 禁用
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+	// Token 类型：0 普通令牌，1 激活式令牌（首次使用才开始计时）
+	Type int `json:"type" gorm:"default:0"`
+	// 激活式令牌：首次使用后才开始计时的有效时长（秒），0 表示普通令牌
+	ExpireDuration int64 `json:"expire_duration" gorm:"bigint;default:0"`
+	// 激活式令牌：实际激活时间，0 表示未激活
+	ActivatedTime int64 `json:"activated_time" gorm:"bigint;default:0"`
 }
 
 func (token *Token) Clean() {
@@ -203,6 +209,7 @@ func ValidateUserToken(key string) (token *Token, err error) {
 		if token.Status != common.TokenStatusEnabled {
 			return token, errors.New("该令牌状态不可用")
 		}
+		// 激活式令牌：检查过期时间（首次使用时 ExpiredTime 被设置为 ActivatedTime + ExpireDuration）
 		if token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp() {
 			if !common.RedisEnabled {
 				token.Status = common.TokenStatusExpired
@@ -212,6 +219,14 @@ func ValidateUserToken(key string) (token *Token, err error) {
 				}
 			}
 			return token, errors.New("该令牌已过期")
+		}
+		// 激活式令牌：首次使用时激活
+		if token.Type == 1 && token.ExpireDuration > 0 && token.ActivatedTime == 0 {
+			err = token.Activate()
+			if err != nil {
+				common.SysLog("failed to activate token: " + err.Error())
+				return token, errors.New("令牌激活失败")
+			}
 		}
 		if !token.UnlimitedQuota && token.RemainQuota <= 0 {
 			if !common.RedisEnabled {
@@ -234,6 +249,21 @@ func ValidateUserToken(key string) (token *Token, err error) {
 	} else {
 		return nil, errors.New("无效的令牌，数据库查询出错，请联系管理员")
 	}
+}
+
+// Activate 激活令牌：设置激活时间并根据有效时长计算过期时间
+func (token *Token) Activate() error {
+	now := common.GetTimestamp()
+	token.ActivatedTime = now
+	token.ExpiredTime = now + token.ExpireDuration
+	if common.RedisEnabled {
+		gopool.Go(func() {
+			if err := cacheDeleteToken(token.Key); err != nil {
+				common.SysLog("failed to delete token cache after activation: " + err.Error())
+			}
+		})
+	}
+	return DB.Model(token).Select("activated_time", "expired_time").Updates(token).Error
 }
 
 func GetTokenByIds(id int, userId int) (*Token, error) {
@@ -306,7 +336,8 @@ func (token *Token) Update() (err error) {
 		}
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+		"type", "expire_duration").Updates(token).Error
 	return err
 }
 

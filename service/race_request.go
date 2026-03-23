@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -578,156 +577,6 @@ func PrepareRaceRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Rea
 	return common.ReaderOnly(storage), nil
 }
 
-// HandleRaceStreamResponse 处理竞速流式响应
-// 当第一个流开始返回数据时，接管该流并取消其他请求
-func HandleRaceStreamResponse(c *gin.Context, winner *RaceResult, info *relaycommon.RelayInfo) *types.NewAPIError {
-	if winner == nil || winner.HTTPResp == nil {
-		return types.NewError(fmt.Errorf("no winner response"), types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
-	}
-
-	// 设置流式响应头
-	helper.SetEventStreamHeaders(c)
-
-	// 检查是否是流式响应
-	contentType := winner.HTTPResp.Header.Get("Content-Type")
-	isStream := strings.HasPrefix(contentType, "text/event-stream")
-
-	if !isStream {
-		// 非流式响应，直接处理
-		return handleNonStreamRaceResponse(c, winner, info)
-	}
-
-	// 流式响应处理
-	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
-
-	var (
-		stopChan   = make(chan bool, 3)
-		scanner    = bufio.NewScanner(winner.HTTPResp.Body)
-		ticker     = time.NewTicker(streamingTimeout)
-		writeMutex sync.Mutex
-		wg         sync.WaitGroup
-	)
-
-	defer func() {
-		common.SafeSendBool(stopChan, true)
-		ticker.Stop()
-		if winner.HTTPResp.Body != nil {
-			winner.HTTPResp.Body.Close()
-		}
-		close(stopChan)
-	}()
-
-	scanner.Buffer(make([]byte, 64<<10), 64<<20)
-	scanner.Split(bufio.ScanLines)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctx = context.WithValue(ctx, "stop_chan", stopChan)
-
-	// 数据处理通道
-	dataChan := make(chan string, 10)
-
-	// 数据写入 goroutine
-	wg.Add(1)
-	gopool.Go(func() {
-		defer wg.Done()
-		for data := range dataChan {
-			writeMutex.Lock()
-			err := helper.StringData(c, data)
-			writeMutex.Unlock()
-			if err != nil {
-				return
-			}
-		}
-	})
-
-	// 扫描 goroutine
-	wg.Add(1)
-	common.RelayCtxGo(ctx, func() {
-		defer func() {
-			close(dataChan)
-			wg.Done()
-		}()
-
-		for scanner.Scan() {
-			select {
-			case <-stopChan:
-				return
-			case <-ctx.Done():
-				return
-			case <-c.Request.Context().Done():
-				return
-			default:
-			}
-
-			ticker.Reset(streamingTimeout)
-			data := scanner.Text()
-
-			if len(data) < 6 {
-				continue
-			}
-			if data[:5] != "data:" && data[:6] != "[DONE]" {
-				continue
-			}
-			data = data[5:]
-			data = strings.TrimSpace(data)
-			if data == "" {
-				continue
-			}
-
-			if !strings.HasPrefix(data, "[DONE]") {
-				info.SetFirstResponseTime()
-				info.ReceivedResponseCount++
-
-				select {
-				case dataChan <- data:
-				case <-ctx.Done():
-					return
-				case <-stopChan:
-					return
-				}
-			} else {
-				// 发送 [DONE]
-				helper.Done(c)
-				return
-			}
-		}
-	})
-
-	// 等待完成或超时
-	select {
-	case <-ticker.C:
-		logger.LogError(c, "streaming timeout")
-	case <-stopChan:
-		logger.LogInfo(c, "streaming finished")
-	case <-c.Request.Context().Done():
-		logger.LogInfo(c, "client disconnected")
-	}
-
-	return nil
-}
-
-// handleNonStreamRaceResponse 处理非流式竞速响应
-func handleNonStreamRaceResponse(c *gin.Context, winner *RaceResult, info *relaycommon.RelayInfo) *types.NewAPIError {
-	// 读取响应体
-	body, err := io.ReadAll(winner.HTTPResp.Body)
-	if err != nil {
-		return types.NewError(fmt.Errorf("failed to read response body: %w", err), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
-	}
-	defer winner.HTTPResp.Body.Close()
-
-	// 设置响应头
-	for key, values := range winner.HTTPResp.Header {
-		for _, value := range values {
-			c.Writer.Header().Add(key, value)
-		}
-	}
-
-	// 写入响应
-	c.Writer.Write(body)
-	return nil
-}
-
 // copyRelayInfo 复制 RelayInfo（手动深拷贝关键字段）
 func copyRelayInfo(info *relaycommon.RelayInfo) *relaycommon.RelayInfo {
 	if info == nil {
@@ -932,170 +781,72 @@ func handleRaceResponse(c *gin.Context, winner *RaceResult, relayInfo *relaycomm
 
 // handleStreamRaceResponseWithBilling 处理流式竞速响应（包含计费）
 func handleStreamRaceResponseWithBilling(c *gin.Context, winner *RaceResult, relayInfo *relaycommon.RelayInfo, priceData types.PriceData) *types.NewAPIError {
-	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
-
 	var (
-		stopChan   = make(chan bool, 3)
-		scanner    = bufio.NewScanner(winner.HTTPResp.Body)
-		ticker     = time.NewTicker(streamingTimeout)
-		writeMutex sync.Mutex
-		wg         sync.WaitGroup
-		usage      *dto.Usage
+		usage *dto.Usage
 	)
 
-	defer func() {
-		common.SafeSendBool(stopChan, true)
-		ticker.Stop()
-		if winner.HTTPResp.Body != nil {
-			winner.HTTPResp.Body.Close()
-		}
-		close(stopChan)
-
-		// 流式结束后结算计费
-		if usage != nil && relayInfo.Billing != nil {
-			actualQuota := calculateActualQuota(usage, priceData)
-			if err := relayInfo.Billing.Settle(actualQuota); err != nil {
-				logger.LogError(c, fmt.Sprintf("Race request: billing settle failed: %s", err.Error()))
+	// 使用 helper.StreamScannerHandler 直接转发上游 SSE 流，避免重复实现
+	helper.StreamScannerHandler(c, winner.HTTPResp, relayInfo, func(data string) bool {
+		// 收集 usage（上游可能在最后一条 data 中包含 usage 信息）
+		if strings.Contains(data, `"usage"`) {
+			parsedUsage := parseUsageFromStreamData(data)
+			if parsedUsage != nil {
+				usage = parsedUsage
 			}
 		}
-
-		// 记录使用日志
-		useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
-		tokenName := c.GetString("token_name")
-		content := fmt.Sprintf("竞速请求成功 | 渠道: %d", winner.Channel.Id)
-		other := map[string]interface{}{
-			"model_ratio":      priceData.ModelRatio,
-			"group_ratio":      priceData.GroupRatioInfo.GroupRatio,
-			"completion_ratio": priceData.CompletionRatio,
-			"model_price":      priceData.ModelPrice,
-			"is_race_request":  true,
+		// 直接转发原始 JSON 数据给客户端
+		if err := helper.StringData(c, data); err != nil {
+			logger.LogError(c, fmt.Sprintf("Race request: stream write error: %s", err.Error()))
+			return false
 		}
+		return true
+	})
 
-		promptTokens := 0
-		completionTokens := 0
-		if usage != nil {
-			promptTokens = usage.InputTokens
-			completionTokens = usage.OutputTokens
-		}
+	// 流式结束后发送 [DONE]
+	helper.Done(c)
 
+	// 结算计费
+	if usage != nil && relayInfo.Billing != nil {
 		actualQuota := calculateActualQuota(usage, priceData)
-		model.RecordConsumeLog(c, relayInfo.UserId, model.RecordConsumeLogParams{
-			ChannelId:        winner.Channel.Id,
-			PromptTokens:     promptTokens,
-			CompletionTokens: completionTokens,
-			ModelName:        relayInfo.OriginModelName,
-			TokenName:        tokenName,
-			Quota:            actualQuota,
-			Content:          content,
-			TokenId:          relayInfo.TokenId,
-			UseTimeSeconds:   int(useTimeSeconds),
-			IsStream:         relayInfo.IsStream,
-			Group:            relayInfo.UsingGroup,
-			Other:            other,
-		})
-	}()
-
-	scanner.Buffer(make([]byte, 64<<10), 64<<20)
-	scanner.Split(bufio.ScanLines)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctx = context.WithValue(ctx, "stop_chan", stopChan)
-
-	// 数据处理通道
-	dataChan := make(chan string, 10)
-
-	// 数据写入 goroutine - 计费版本
-	wg.Add(1)
-	gopool.Go(func() {
-		defer wg.Done()
-		for data := range dataChan {
-			writeMutex.Lock()
-			err := helper.StringData(c, data)
-			writeMutex.Unlock()
-			if err != nil {
-				// 记录错误但不立即退出，继续处理其他数据
-				logger.LogError(c, fmt.Sprintf("Race request: stream write error: %s", err.Error()))
-			}
+		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
+			logger.LogError(c, fmt.Sprintf("Race request: billing settle failed: %s", err.Error()))
 		}
-	})
-
-	// 扫描 goroutine
-	wg.Add(1)
-	common.RelayCtxGo(ctx, func() {
-		defer func() {
-			close(dataChan)
-			wg.Done()
-		}()
-
-		for scanner.Scan() {
-			select {
-			case <-stopChan:
-				return
-			case <-ctx.Done():
-				return
-			case <-c.Request.Context().Done():
-				return
-			default:
-			}
-
-			ticker.Reset(streamingTimeout)
-			data := scanner.Text()
-
-			if len(data) < 6 {
-				continue
-			}
-			if data[:5] != "data:" && data[:6] != "[DONE]" {
-				continue
-			}
-			data = data[5:]
-			data = strings.TrimSpace(data)
-			if data == "" {
-				continue
-			}
-
-			if !strings.HasPrefix(data, "[DONE]") {
-				relayInfo.SetFirstResponseTime()
-				relayInfo.ReceivedResponseCount++
-
-				// 尝试解析 usage
-				if strings.Contains(data, `"usage"`) {
-					parsedUsage := parseUsageFromStreamData(data)
-					if parsedUsage != nil {
-						usage = parsedUsage
-					}
-				}
-
-				select {
-				case dataChan <- data:
-				case <-ctx.Done():
-					return
-				case <-stopChan:
-					return
-				}
-			} else {
-				// 发送 [DONE]
-				helper.Done(c)
-				return
-			}
-		}
-	})
-
-	// 等待完成或超时
-	doneChan := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(doneChan)
-	}()
-
-	select {
-	case <-doneChan:
-		logger.LogInfo(c, "streaming finished")
-	case <-ticker.C:
-		logger.LogError(c, "streaming timeout")
-	case <-c.Request.Context().Done():
-		logger.LogInfo(c, "client disconnected")
 	}
+
+	// 记录使用日志
+	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
+	tokenName := c.GetString("token_name")
+	content := fmt.Sprintf("竞速请求成功 | 渠道: %d", winner.Channel.Id)
+	other := map[string]interface{}{
+		"model_ratio":      priceData.ModelRatio,
+		"group_ratio":      priceData.GroupRatioInfo.GroupRatio,
+		"completion_ratio": priceData.CompletionRatio,
+		"model_price":      priceData.ModelPrice,
+		"is_race_request":  true,
+	}
+
+	promptTokens := 0
+	completionTokens := 0
+	if usage != nil {
+		promptTokens = usage.InputTokens
+		completionTokens = usage.OutputTokens
+	}
+
+	actualQuota := calculateActualQuota(usage, priceData)
+	model.RecordConsumeLog(c, relayInfo.UserId, model.RecordConsumeLogParams{
+		ChannelId:        winner.Channel.Id,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		ModelName:        relayInfo.OriginModelName,
+		TokenName:        tokenName,
+		Quota:            actualQuota,
+		Content:          content,
+		TokenId:          relayInfo.TokenId,
+		UseTimeSeconds:   int(useTimeSeconds),
+		IsStream:         relayInfo.IsStream,
+		Group:            relayInfo.UsingGroup,
+		Other:            other,
+	})
 
 	return nil
 }

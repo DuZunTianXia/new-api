@@ -66,6 +66,7 @@ const renderStatus = (text, record, t) => {
 
   let tagColor = 'black';
   let tagText = t('未知状态');
+  let subText = null;
   if (enabled) {
     tagColor = 'green';
     tagText = t('已启用');
@@ -80,10 +81,26 @@ const renderStatus = (text, record, t) => {
     tagText = t('已耗尽');
   }
 
+  // 激活式令牌：显示激活状态
+  if (record.type === 1 && record.expire_duration > 0) {
+    if (record.activated_time > 0) {
+      subText = t('已激活');
+    } else {
+      subText = t('未激活');
+    }
+  }
+
   return (
-    <Tag color={tagColor} shape='circle' size='small'>
-      {tagText}
-    </Tag>
+    <div className='flex flex-col'>
+      <Tag color={tagColor} shape='circle' size='small'>
+        {tagText}
+      </Tag>
+      {subText && (
+        <Tag color={record.activated_time > 0 ? 'cyan' : 'grey'} shape='circle' size='small' style={{ marginTop: 2 }}>
+          {subText}
+        </Tag>
+      )}
+    </div>
   );
 };
 
@@ -507,6 +524,34 @@ export const getTokensColumns = ({
       title: t('过期时间'),
       dataIndex: 'expired_time',
       render: (text, record, index) => {
+        // 激活式令牌
+        if (record.type === 1 && record.expire_duration > 0) {
+          if (record.activated_time > 0) {
+            // 已激活：显示实际过期时间
+            return <div>{renderTimestamp(record.expired_time)}</div>;
+          } else {
+            // 未激活：显示有效期时长
+            const totalSeconds = record.expire_duration;
+            const days = Math.floor(totalSeconds / (24 * 60 * 60));
+            const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / (60 * 60));
+            const minutes = Math.floor((totalSeconds % (60 * 60)) / 60);
+            let durationText = '';
+            if (days > 0) durationText += `${days}${t('天')}`;
+            if (hours > 0) durationText += `${hours}${t('小时')}`;
+            if (minutes > 0) durationText += `${minutes}${t('分钟')}`;
+            return (
+              <div>
+                <Tag color='cyan' shape='circle' size='small'>
+                  {t('未激活')}
+                </Tag>
+                <span className='text-xs text-gray-500 ml-1'>
+                  ({t('有效期')}: {durationText || t('未设置')})
+                </span>
+              </div>
+            );
+          }
+        }
+        // 普通令牌
         return (
           <div>
             {record.expired_time === -1 ? t('永不过期') : renderTimestamp(text)}

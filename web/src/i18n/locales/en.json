@@ -3312,6 +3312,22 @@
     "竞速并发数": "Race Concurrency",
     "该渠道的竞速请求并发数（0使用全局设置，1-5为独立设置）": "The concurrency number for this channel's race requests (0 to use global setting, 1-5 for independent setting)",
     "启用": "Enable",
-    "禁用": "Disable"
+    "禁用": "Disable",
+    "激活设置": "Activation Settings",
+    "设置令牌为激活式：首次使用后才开始计时": "Set token as activation-based: timer starts after first use",
+    "令牌类型": "Token Type",
+    "激活式令牌在首次调用API时才会激活并开始计算有效期": "Activation-based token activates and starts calculating validity period only when API is called for the first time",
+    "普通令牌创建后立即开始计算有效期": "Regular token starts calculating validity period immediately after creation",
+    "普通令牌": "Regular Token",
+    "激活式令牌": "Activation-based Token",
+    "请输入天数": "Please enter days",
+    "请输入小时": "Please enter hours",
+    "请输入分钟": "Please enter minutes",
+    "一周": "1 Week",
+    "30分钟": "30 Minutes",
+    "已激活": "Activated",
+    "未激活": "Not Activated",
+    "有效期": "Validity Period",
+    "有效期设置（首次使用后开始计时）": "Validity Period (starts after first use)"
   }
 }
