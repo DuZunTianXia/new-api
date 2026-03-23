@@ -240,8 +240,8 @@ func (r *RaceRequestor) DoRaceRequest(
 				return
 			}
 
-			// 同步渠道信息到 RelayInfo（确保 infoCopy 包含渠道信息）
-			SyncChannelInfoToRelayInfo(infoCopy, ch)
+			// 同步渠道信息到 RelayInfo（确保 infoCopy 包含渠道信息，并传递可取消 context）
+			SyncChannelInfoToRelayInfo(infoCopy, ch, reqCtx)
 
 			// 竞速模式下，如果是单渠道多密钥情况，根据索引选择特定密钥
 			keys := ch.GetKeys()
@@ -338,7 +338,8 @@ func (r *RaceRequestor) DoRaceRequest(
 				if successResult == nil {
 					successResult = result
 					logger.LogInfo(c, fmt.Sprintf("Race request: winner channel %d (id=%d)", result.Index, result.Channel.Id))
-					// 立即返回获胜者，不等待其他 goroutine
+					// 立即取消其他请求（让它们尽快退出）
+					r.CancelAll()
 					// 启动后台 goroutine 来等待和清理资源
 					go func() {
 						// 等待其他 goroutine 完成（最多3秒）
@@ -350,9 +351,8 @@ func (r *RaceRequestor) DoRaceRequest(
 						select {
 						case <-doneChan:
 						case <-time.After(3 * time.Second):
+							logger.LogError(c, "Timeout waiting for race request goroutines to finish")
 						}
-						// 取消其他请求
-						r.CancelAll()
 						// 关闭所有非获胜者的响应体
 						for _, res := range allResults {
 							if res != successResult && res.HTTPResp != nil && res.HTTPResp.Body != nil {
@@ -487,7 +487,7 @@ func SetupContextForSelectedChannelWithCancel(c *gin.Context, channel *model.Cha
 }
 
 // SyncChannelInfoToRelayInfo 将渠道信息同步到 RelayInfo
-func SyncChannelInfoToRelayInfo(info *relaycommon.RelayInfo, channel *model.Channel) {
+func SyncChannelInfoToRelayInfo(info *relaycommon.RelayInfo, channel *model.Channel, raceCtx context.Context) {
 	if info == nil || channel == nil {
 		return
 	}
@@ -501,6 +501,8 @@ func SyncChannelInfoToRelayInfo(info *relaycommon.RelayInfo, channel *model.Chan
 	info.ApiKey = channel.Key
 	info.ChannelSetting = channel.GetSetting()
 	info.ChannelIsMultiKey = channel.ChannelInfo.IsMultiKey
+	// 设置竞速请求的可取消 context
+	info.RaceContext = raceCtx
 }
 
 // ShouldUseRaceRequest 判断是否应该使用竞速请求
@@ -633,7 +635,13 @@ func HandleRaceStreamResponse(c *gin.Context, winner *RaceResult, info *relaycom
 		defer wg.Done()
 		for data := range dataChan {
 			writeMutex.Lock()
-			err := helper.StringData(c, data)
+			var err error
+			if data == "[DONE]" {
+				// 发送 [DONE] 消息
+				helper.Done(c)
+			} else {
+				err = helper.StringData(c, data)
+			}
 			writeMutex.Unlock()
 			if err != nil {
 				return
@@ -663,10 +671,24 @@ func HandleRaceStreamResponse(c *gin.Context, winner *RaceResult, info *relaycom
 			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
 
+			// 跳过空行
 			if len(data) < 6 {
 				continue
 			}
-			if data[:5] != "data:" && data[:6] != "[DONE]" {
+
+			// 检查是否是 [DONE] 标记（独立一行）
+			if strings.HasPrefix(data, "[DONE]") {
+				// 通过 dataChan 发送 [DONE]，确保顺序正确
+				select {
+				case dataChan <- "[DONE]":
+				case <-ctx.Done():
+				case <-stopChan:
+				}
+				return
+			}
+
+			// 检查是否是 data: 开头的行
+			if !strings.HasPrefix(data, "data:") {
 				continue
 			}
 			data = data[5:]
@@ -675,7 +697,8 @@ func HandleRaceStreamResponse(c *gin.Context, winner *RaceResult, info *relaycom
 				continue
 			}
 
-			if !strings.HasPrefix(data, "[DONE]") {
+			// 处理普通数据行
+			if data != "[DONE]" {
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 
@@ -687,19 +710,30 @@ func HandleRaceStreamResponse(c *gin.Context, winner *RaceResult, info *relaycom
 					return
 				}
 			} else {
-				// 发送 [DONE]
-				helper.Done(c)
+				// 通过 dataChan 发送 [DONE]，确保顺序正确
+				select {
+				case dataChan <- "[DONE]":
+				case <-ctx.Done():
+				case <-stopChan:
+				}
 				return
 			}
 		}
 	})
 
+	// 等待 goroutine 完成
+	doneChan := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneChan)
+	}()
+
 	// 等待完成或超时
 	select {
+	case <-doneChan:
+		logger.LogInfo(c, "streaming finished")
 	case <-ticker.C:
 		logger.LogError(c, "streaming timeout")
-	case <-stopChan:
-		logger.LogInfo(c, "streaming finished")
 	case <-c.Request.Context().Done():
 		logger.LogInfo(c, "client disconnected")
 	}
@@ -757,6 +791,7 @@ func copyRelayInfo(info *relaycommon.RelayInfo) *relaycommon.RelayInfo {
 		ShouldIncludeUsage: info.ShouldIncludeUsage,
 		DisablePing:        info.DisablePing,
 		ReasoningEffort:    info.ReasoningEffort,
+		// RaceContext 会被 SyncChannelInfoToRelayInfo 设置，这里不需要复制
 	}
 
 	// 复制 ChannelMeta（嵌入的指针）
@@ -1011,7 +1046,13 @@ func handleStreamRaceResponseWithBilling(c *gin.Context, winner *RaceResult, rel
 		defer wg.Done()
 		for data := range dataChan {
 			writeMutex.Lock()
-			err := helper.StringData(c, data)
+			var err error
+			if data == "[DONE]" {
+				// 发送 [DONE] 消息
+				helper.Done(c)
+			} else {
+				err = helper.StringData(c, data)
+			}
 			writeMutex.Unlock()
 			if err != nil {
 				// 记录错误但不立即退出，继续处理其他数据
@@ -1042,19 +1083,32 @@ func handleStreamRaceResponseWithBilling(c *gin.Context, winner *RaceResult, rel
 			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
 
-			if len(data) < 6 {
-				continue
-			}
-			if data[:5] != "data:" && data[:6] != "[DONE]" {
-				continue
-			}
-			data = data[5:]
-			data = strings.TrimSpace(data)
-			if data == "" {
-				continue
-			}
+if len(data) < 6 {
+		continue
+	}
 
-			if !strings.HasPrefix(data, "[DONE]") {
+	// 检查是否是 [DONE] 标记（独立一行）
+	if strings.HasPrefix(data, "[DONE]") {
+		// 通过 dataChan 发送 [DONE]，确保顺序正确
+		select {
+		case dataChan <- "[DONE]":
+		case <-ctx.Done():
+		case <-stopChan:
+		}
+		return
+	}
+
+	// 检查是否是 data: 开头的行
+	if !strings.HasPrefix(data, "data:") {
+		continue
+	}
+	data = data[5:]
+	data = strings.TrimSpace(data)
+	if data == "" {
+		continue
+	}
+
+	// 处理普通数据行
 				relayInfo.SetFirstResponseTime()
 				relayInfo.ReceivedResponseCount++
 
@@ -1074,8 +1128,12 @@ func handleStreamRaceResponseWithBilling(c *gin.Context, winner *RaceResult, rel
 					return
 				}
 			} else {
-				// 发送 [DONE]
-				helper.Done(c)
+				// 通过 dataChan 发送 [DONE]，确保顺序正确
+				select {
+				case dataChan <- "[DONE]":
+				case <-ctx.Done():
+				case <-stopChan:
+				}
 				return
 			}
 		}
@@ -1254,7 +1312,9 @@ func doRaceHTTPRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody 
 		fullRequestURL = fmt.Sprintf("%s/v1/chat/completions", baseURL)
 	}
 
-	// 创建 HTTP 请求（使用 background context，避免被主请求取消）
+	// 创建 HTTP 请求
+	// 注意：这里使用 context.Background()，因为 Go 的 http.Client.Do() 在 context 取消时会关闭响应体
+	// 如果使用可取消的 context，当 CancelAll() 被调用时，获胜者的响应体也会被关闭
 	req, err := http.NewRequestWithContext(context.Background(), "POST", fullRequestURL, requestBody)
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("new request failed: %w", err), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
@@ -1263,6 +1323,10 @@ func doRaceHTTPRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", info.ApiKey))
+	// 设置 Accept 头，确保上游返回流式响应
+	if info.IsStream {
+		req.Header.Set("Accept", "text/event-stream")
+	}
 
 	// 发送请求
 	resp, err := client.Do(req)
