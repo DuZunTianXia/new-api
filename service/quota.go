@@ -492,7 +492,8 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 		}
 	}
 
-	if !relayInfo.IsPlayground {
+	// 管理员（Role >= 100）使用不消耗 Token 额度
+	if !relayInfo.IsPlayground && relayInfo.UserRole < common.RoleRootUser {
 		if quota > 0 {
 			err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
 		} else {

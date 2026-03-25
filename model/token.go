@@ -30,11 +30,23 @@ type Token struct {
 	CrossGroupRetry    bool    `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	// 竞速请求设置
 	RaceRequestEnabled *int           `json:"race_request_enabled" gorm:"default:0"` // 0: 跟随全局设置, 1: 启用, 2: 禁用
+<<<<<<< HEAD
 	// 激活式令牌：首次使用后才开始计时的有效时长（秒），0 表示非激活式令牌（即普通令牌）
 	ExpireDuration int64 `json:"expire_duration" gorm:"bigint;default:0"`
 	// 激活式令牌：实际激活时间，0 表示未激活
 	ActivatedTime int64 `json:"activated_time" gorm:"bigint;default:0"`
 	DeletedAt     gorm.DeletedAt `gorm:"index"`
+=======
+	DeletedAt          gorm.DeletedAt `gorm:"index"`
+	// Token 类型：0 普通令牌，1 激活式令牌（首次使用才开始计时）
+	Type int `json:"type" gorm:"default:0"`
+	// 激活式令牌：首次使用后才开始计时的有效时长（秒），0 表示普通令牌
+	ExpireDuration int64 `json:"expire_duration" gorm:"bigint;default:0"`
+	// 激活式令牌：实际激活时间，0 表示未激活
+	ActivatedTime int64 `json:"activated_time" gorm:"bigint;default:0"`
+	// 令牌分组 ID
+	TokenGroupId int `json:"token_group_id" gorm:"default:0;index"`
+>>>>>>> security-improvements
 }
 
 func (token *Token) Clean() {
@@ -84,10 +96,14 @@ func (token *Token) GetIpLimits() []string {
 	return ipLimits
 }
 
-func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
+func GetAllUserTokens(userId int, startIdx int, num int, tokenGroupId int) ([]*Token, error) {
 	var tokens []*Token
 	var err error
-	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
+	query := DB.Where("user_id = ?", userId)
+	if tokenGroupId > 0 {
+		query = query.Where("token_group_id = ?", tokenGroupId)
+	}
+	err = query.Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
 	return tokens, err
 }
 
@@ -219,7 +235,11 @@ func ValidateUserToken(key string) (token *Token, err error) {
 			return token, errors.New("该令牌已过期")
 		}
 		// 激活式令牌：首次使用时激活
+<<<<<<< HEAD
 		if token.ExpireDuration > 0 && token.ActivatedTime == 0 {
+=======
+		if token.Type == 1 && token.ExpireDuration > 0 && token.ActivatedTime == 0 {
+>>>>>>> security-improvements
 			err = token.Activate()
 			if err != nil {
 				common.SysLog("failed to activate token: " + err.Error())
@@ -250,10 +270,50 @@ func ValidateUserToken(key string) (token *Token, err error) {
 }
 
 // Activate 激活令牌：设置激活时间并根据有效时长计算过期时间
+<<<<<<< HEAD
 func (token *Token) Activate() error {
 	now := common.GetTimestamp()
 	token.ActivatedTime = now
 	token.ExpiredTime = now + token.ExpireDuration
+=======
+// 使用数据库乐观锁防止并发激活
+func (token *Token) Activate() error {
+	now := common.GetTimestamp()
+	newActivatedTime := now
+	newExpiredTime := now + token.ExpireDuration
+
+	// 使用乐观锁：只有当 activated_time 仍为 0 时才更新
+	// 这样可以防止并发激活导致的重复设置
+	result := DB.Model(&Token{}).
+		Where("id = ? AND activated_time = 0", token.Id).
+		Updates(map[string]interface{}{
+			"activated_time": newActivatedTime,
+			"expired_time":   newExpiredTime,
+		})
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	// 如果没有行被更新，说明令牌已经被激活了
+	if result.RowsAffected == 0 {
+		// 重新读取令牌以获取最新的激活时间
+		var updatedToken Token
+		if err := DB.Where("id = ?", token.Id).First(&updatedToken).Error; err != nil {
+			return err
+		}
+		token.ActivatedTime = updatedToken.ActivatedTime
+		token.ExpiredTime = updatedToken.ExpiredTime
+		common.SysLog(fmt.Sprintf("Token %d already activated, skipping duplicate activation", token.Id))
+		return nil
+	}
+
+	// 更新成功，设置本地值
+	token.ActivatedTime = newActivatedTime
+	token.ExpiredTime = newExpiredTime
+
+	// 异步清除 Redis 缓存
+>>>>>>> security-improvements
 	if common.RedisEnabled {
 		gopool.Go(func() {
 			if err := cacheDeleteToken(token.Key); err != nil {
@@ -261,7 +321,12 @@ func (token *Token) Activate() error {
 			}
 		})
 	}
+<<<<<<< HEAD
 	return DB.Model(token).Select("activated_time", "expired_time").Updates(token).Error
+=======
+
+	return nil
+>>>>>>> security-improvements
 }
 
 func GetTokenByIds(id int, userId int) (*Token, error) {
@@ -335,7 +400,11 @@ func (token *Token) Update() (err error) {
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
 		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+<<<<<<< HEAD
 		"expire_duration").Updates(token).Error
+=======
+		"type", "expire_duration", "token_group_id").Updates(token).Error
+>>>>>>> security-improvements
 	return err
 }
 
@@ -472,11 +541,20 @@ func decreaseTokenQuota(id int, quota int) (err error) {
 	return err
 }
 
+// CountUserTokensByGroup returns total number of tokens for the given user and group
+func CountUserTokensByGroup(userId int, tokenGroupId int) (int64, error) {
+	var total int64
+	query := DB.Model(&Token{}).Where("user_id = ?", userId)
+	if tokenGroupId > 0 {
+		query = query.Where("token_group_id = ?", tokenGroupId)
+	}
+	err := query.Count(&total).Error
+	return total, err
+}
+
 // CountUserTokens returns total number of tokens for the given user, used for pagination
 func CountUserTokens(userId int) (int64, error) {
-	var total int64
-	err := DB.Model(&Token{}).Where("user_id = ?", userId).Count(&total).Error
-	return total, err
+	return CountUserTokensByGroup(userId, 0)
 }
 
 // BatchDeleteTokens 删除指定用户的一组令牌，返回成功删除数量

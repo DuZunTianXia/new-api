@@ -167,8 +167,8 @@ var (
 	GlobalWebRateLimitDuration int64
 
 	CriticalRateLimitEnable   bool
-	CriticalRateLimitNum            = 20
-	CriticalRateLimitDuration int64 = 20 * 60
+	CriticalRateLimitNum            = 20   // 默认 20 次请求
+	CriticalRateLimitDuration int64 = 20 * 60 // 默认 20 分钟，用于保护敏感接口如令牌状态查询，防止暴力枚举
 
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60

@@ -82,7 +82,11 @@ const renderStatus = (text, record, t) => {
   }
 
   // 激活式令牌：显示激活状态
+<<<<<<< HEAD
   if (record.expire_duration > 0) {
+=======
+  if (record.type === 1 && record.expire_duration > 0) {
+>>>>>>> security-improvements
     if (record.activated_time > 0) {
       subText = t('已激活');
     } else {
@@ -525,7 +529,11 @@ export const getTokensColumns = ({
       dataIndex: 'expired_time',
       render: (text, record, index) => {
         // 激活式令牌
+<<<<<<< HEAD
         if (record.expire_duration > 0) {
+=======
+        if (record.type === 1 && record.expire_duration > 0) {
+>>>>>>> security-improvements
           if (record.activated_time > 0) {
             // 已激活：显示实际过期时间
             return <div>{renderTimestamp(record.expired_time)}</div>;

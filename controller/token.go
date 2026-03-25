@@ -34,12 +34,23 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
-	tokens, err := model.GetAllUserTokens(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+
+	// 获取可选的分组筛选参数
+	tokenGroupIdStr := c.Query("token_group_id")
+	tokenGroupId := 0
+	if tokenGroupIdStr != "" {
+		id, err := strconv.Atoi(tokenGroupIdStr)
+		if err == nil && id > 0 {
+			tokenGroupId = id
+		}
+	}
+
+	tokens, err := model.GetAllUserTokens(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), tokenGroupId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	total, _ := model.CountUserTokens(userId)
+	total, _ := model.CountUserTokensByGroup(userId, tokenGroupId)
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
 	common.ApiSuccess(c, pageInfo)
@@ -221,7 +232,13 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+<<<<<<< HEAD
 		ExpireDuration:     token.ExpireDuration,
+=======
+		Type:               token.Type,
+		ExpireDuration:     token.ExpireDuration,
+		TokenGroupId:       token.TokenGroupId,
+>>>>>>> security-improvements
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -300,7 +317,13 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+<<<<<<< HEAD
 		cleanToken.ExpireDuration = token.ExpireDuration
+=======
+		cleanToken.Type = token.Type
+		cleanToken.ExpireDuration = token.ExpireDuration
+		cleanToken.TokenGroupId = token.TokenGroupId
+>>>>>>> security-improvements
 	}
 	err = cleanToken.Update()
 	if err != nil {
@@ -334,5 +357,85 @@ func DeleteTokenBatch(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    count,
+	})
+}
+
+// GetActivationTokenStatus 公开查询激活式令牌状态（无需登录）
+// 用户可以通过令牌密钥查询激活式令牌的状态信息
+func GetActivationTokenStatus(c *gin.Context) {
+	tokenKey := c.Query("key")
+	if tokenKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "令牌密钥不能为空",
+		})
+		return
+	}
+
+	// 移除 sk- 前缀
+	tokenKey = strings.TrimPrefix(tokenKey, "sk-")
+
+	token, err := model.GetTokenByKey(tokenKey, false)
+	if err != nil {
+		// 统一错误信息，避免泄露令牌是否存在
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"message": "令牌不存在或不可查询",
+		})
+		return
+	}
+
+	// 仅允许查询激活式令牌
+	// 统一错误信息，避免泄露令牌类型
+	if token.Type != 1 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"message": "令牌不存在或不可查询",
+		})
+		return
+	}
+
+	// 计算状态
+	now := common.GetTimestamp()
+	status := "active"
+	statusCode := token.Status
+
+	// 检查是否已过期
+	if token.ExpiredTime != -1 && token.ExpiredTime < now {
+		status = "expired"
+		statusCode = common.TokenStatusExpired
+	} else if token.Status == common.TokenStatusDisabled {
+		status = "disabled"
+	} else if token.Status == common.TokenStatusExhausted {
+		status = "exhausted"
+	} else if token.ActivatedTime == 0 {
+		status = "not_activated"
+	}
+
+	// 计算剩余时间（秒）
+	var remainingSeconds int64 = -1
+	if token.ActivatedTime > 0 && token.ExpiredTime > 0 {
+		remainingSeconds = token.ExpiredTime - now
+		if remainingSeconds < 0 {
+			remainingSeconds = 0
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"name":              token.Name,
+			"status":            status,
+			"status_code":       statusCode,
+			"activated":         token.ActivatedTime > 0,
+			"activated_time":    token.ActivatedTime,
+			"expire_duration":   token.ExpireDuration,
+			"expired_time":      token.ExpiredTime,
+			"remaining_seconds": remainingSeconds,
+			"unlimited_quota":   token.UnlimitedQuota,
+			"remain_quota":      token.RemainQuota,
+			"masked_key":        token.GetMaskedKey(),
+		},
 	})
 }
