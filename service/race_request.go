@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -579,7 +580,6 @@ func PrepareRaceRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Rea
 	return common.ReaderOnly(storage), nil
 }
 
-<<<<<<< HEAD
 // HandleRaceStreamResponse 处理竞速流式响应
 // 当第一个流开始返回数据时，接管该流并取消其他请求
 func HandleRaceStreamResponse(c *gin.Context, winner *RaceResult, info *relaycommon.RelayInfo) *types.NewAPIError {
@@ -762,8 +762,6 @@ func handleNonStreamRaceResponse(c *gin.Context, winner *RaceResult, info *relay
 	return nil
 }
 
-=======
->>>>>>> security-improvements
 // copyRelayInfo 复制 RelayInfo（手动深拷贝关键字段）
 func copyRelayInfo(info *relaycommon.RelayInfo) *relaycommon.RelayInfo {
 	if info == nil {
@@ -1008,151 +1006,9 @@ func handleStreamRaceResponseWithBilling(c *gin.Context, winner *RaceResult, rel
 	// 结算计费
 	if usage != nil && relayInfo.Billing != nil {
 		actualQuota := calculateActualQuota(usage, priceData)
-<<<<<<< HEAD
-		model.RecordConsumeLog(c, relayInfo.UserId, model.RecordConsumeLogParams{
-			ChannelId:        winner.Channel.Id,
-			PromptTokens:     promptTokens,
-			CompletionTokens: completionTokens,
-			ModelName:        relayInfo.OriginModelName,
-			TokenName:        tokenName,
-			Quota:            actualQuota,
-			Content:          content,
-			TokenId:          relayInfo.TokenId,
-			UseTimeSeconds:   int(useTimeSeconds),
-			IsStream:         relayInfo.IsStream,
-			Group:            relayInfo.UsingGroup,
-			Other:            other,
-		})
-	}()
-
-	scanner.Buffer(make([]byte, 64<<10), 64<<20)
-	scanner.Split(bufio.ScanLines)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctx = context.WithValue(ctx, "stop_chan", stopChan)
-
-	// 数据处理通道
-	dataChan := make(chan string, 10)
-
-	// 数据写入 goroutine - 计费版本
-	wg.Add(1)
-	gopool.Go(func() {
-		defer wg.Done()
-		for data := range dataChan {
-			writeMutex.Lock()
-			var err error
-			if data == "[DONE]" {
-				// 发送 [DONE] 消息
-				helper.Done(c)
-			} else {
-				err = helper.StringData(c, data)
-			}
-			writeMutex.Unlock()
-			if err != nil {
-				// 记录错误但不立即退出，继续处理其他数据
-				logger.LogError(c, fmt.Sprintf("Race request: stream write error: %s", err.Error()))
-			}
-		}
-	})
-
-	// 扫描 goroutine
-	wg.Add(1)
-	common.RelayCtxGo(ctx, func() {
-		defer func() {
-			close(dataChan)
-			wg.Done()
-		}()
-
-		for scanner.Scan() {
-			select {
-			case <-stopChan:
-				return
-			case <-ctx.Done():
-				return
-			case <-c.Request.Context().Done():
-				return
-			default:
-			}
-
-			ticker.Reset(streamingTimeout)
-			data := scanner.Text()
-
-if len(data) < 6 {
-		continue
-	}
-
-	// 检查是否是 [DONE] 标记（独立一行）
-	if strings.HasPrefix(data, "[DONE]") {
-		// 通过 dataChan 发送 [DONE]，确保顺序正确
-		select {
-		case dataChan <- "[DONE]":
-		case <-ctx.Done():
-		case <-stopChan:
-		}
-		return
-	}
-
-	// 检查是否是 data: 开头的行
-	if !strings.HasPrefix(data, "data:") {
-		continue
-	}
-	data = data[5:]
-	data = strings.TrimSpace(data)
-	if data == "" {
-		continue
-	}
-
-	// 处理普通数据行
-				relayInfo.SetFirstResponseTime()
-				relayInfo.ReceivedResponseCount++
-
-				// 尝试解析 usage
-				if strings.Contains(data, `"usage"`) {
-					parsedUsage := parseUsageFromStreamData(data)
-					if parsedUsage != nil {
-						usage = parsedUsage
-					}
-				}
-
-				select {
-				case dataChan <- data:
-				case <-ctx.Done():
-					return
-				case <-stopChan:
-					return
-				}
-			} else {
-				// 通过 dataChan 发送 [DONE]，确保顺序正确
-				select {
-				case dataChan <- "[DONE]":
-				case <-ctx.Done():
-				case <-stopChan:
-				}
-				return
-			}
-		}
-	})
-
-	// 等待完成或超时
-	doneChan := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(doneChan)
-	}()
-
-	select {
-	case <-doneChan:
-		logger.LogInfo(c, "streaming finished")
-	case <-ticker.C:
-		logger.LogError(c, "streaming timeout")
-	case <-c.Request.Context().Done():
-		logger.LogInfo(c, "client disconnected")
-=======
 		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
 			logger.LogError(c, fmt.Sprintf("Race request: billing settle failed: %s", err.Error()))
 		}
->>>>>>> security-improvements
 	}
 
 	// 记录使用日志

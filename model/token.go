@@ -30,14 +30,6 @@ type Token struct {
 	CrossGroupRetry    bool    `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	// 竞速请求设置
 	RaceRequestEnabled *int           `json:"race_request_enabled" gorm:"default:0"` // 0: 跟随全局设置, 1: 启用, 2: 禁用
-<<<<<<< HEAD
-	// 激活式令牌：首次使用后才开始计时的有效时长（秒），0 表示非激活式令牌（即普通令牌）
-	ExpireDuration int64 `json:"expire_duration" gorm:"bigint;default:0"`
-	// 激活式令牌：实际激活时间，0 表示未激活
-	ActivatedTime int64 `json:"activated_time" gorm:"bigint;default:0"`
-	DeletedAt     gorm.DeletedAt `gorm:"index"`
-=======
-	DeletedAt          gorm.DeletedAt `gorm:"index"`
 	// Token 类型：0 普通令牌，1 激活式令牌（首次使用才开始计时）
 	Type int `json:"type" gorm:"default:0"`
 	// 激活式令牌：首次使用后才开始计时的有效时长（秒），0 表示普通令牌
@@ -46,7 +38,7 @@ type Token struct {
 	ActivatedTime int64 `json:"activated_time" gorm:"bigint;default:0"`
 	// 令牌分组 ID
 	TokenGroupId int `json:"token_group_id" gorm:"default:0;index"`
->>>>>>> security-improvements
+	DeletedAt          gorm.DeletedAt `gorm:"index"`
 }
 
 func (token *Token) Clean() {
@@ -235,11 +227,7 @@ func ValidateUserToken(key string) (token *Token, err error) {
 			return token, errors.New("该令牌已过期")
 		}
 		// 激活式令牌：首次使用时激活
-<<<<<<< HEAD
-		if token.ExpireDuration > 0 && token.ActivatedTime == 0 {
-=======
 		if token.Type == 1 && token.ExpireDuration > 0 && token.ActivatedTime == 0 {
->>>>>>> security-improvements
 			err = token.Activate()
 			if err != nil {
 				common.SysLog("failed to activate token: " + err.Error())
@@ -269,14 +257,7 @@ func ValidateUserToken(key string) (token *Token, err error) {
 	}
 }
 
-// Activate 激活令牌：设置激活时间并根据有效时长计算过期时间
-<<<<<<< HEAD
-func (token *Token) Activate() error {
-	now := common.GetTimestamp()
-	token.ActivatedTime = now
-	token.ExpiredTime = now + token.ExpireDuration
-=======
-// 使用数据库乐观锁防止并发激活
+// Activate 激活令牌：设置激活时间并根据有效时长计算过期时间（使用数据库乐观锁防止并发激活）
 func (token *Token) Activate() error {
 	now := common.GetTimestamp()
 	newActivatedTime := now
@@ -313,7 +294,6 @@ func (token *Token) Activate() error {
 	token.ExpiredTime = newExpiredTime
 
 	// 异步清除 Redis 缓存
->>>>>>> security-improvements
 	if common.RedisEnabled {
 		gopool.Go(func() {
 			if err := cacheDeleteToken(token.Key); err != nil {
@@ -321,12 +301,7 @@ func (token *Token) Activate() error {
 			}
 		})
 	}
-<<<<<<< HEAD
-	return DB.Model(token).Select("activated_time", "expired_time").Updates(token).Error
-=======
-
 	return nil
->>>>>>> security-improvements
 }
 
 func GetTokenByIds(id int, userId int) (*Token, error) {
@@ -400,11 +375,7 @@ func (token *Token) Update() (err error) {
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
 		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
-<<<<<<< HEAD
-		"expire_duration").Updates(token).Error
-=======
 		"type", "expire_duration", "token_group_id").Updates(token).Error
->>>>>>> security-improvements
 	return err
 }
 

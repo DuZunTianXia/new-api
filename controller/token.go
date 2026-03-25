@@ -232,13 +232,9 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
-<<<<<<< HEAD
-		ExpireDuration:     token.ExpireDuration,
-=======
 		Type:               token.Type,
 		ExpireDuration:     token.ExpireDuration,
 		TokenGroupId:       token.TokenGroupId,
->>>>>>> security-improvements
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -317,13 +313,9 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-<<<<<<< HEAD
-		cleanToken.ExpireDuration = token.ExpireDuration
-=======
 		cleanToken.Type = token.Type
 		cleanToken.ExpireDuration = token.ExpireDuration
 		cleanToken.TokenGroupId = token.TokenGroupId
->>>>>>> security-improvements
 	}
 	err = cleanToken.Update()
 	if err != nil {
