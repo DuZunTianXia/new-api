@@ -78,18 +78,11 @@ const EditTokenModal = (props) => {
     cross_group_retry: false,
     tokenCount: 1,
     race_request_enabled: 0, // 0: 跟随全局设置, 1: 启用, 2: 禁用
-<<<<<<< HEAD
-    expire_duration: 0, // 0: 非激活式令牌, >0: 激活式令牌（秒）
-    expire_duration_days: 0,
-    expire_duration_hours: 0,
-    expire_duration_minutes: 0,
-=======
     type: 0, // 0: 普通令牌, 1: 激活式令牌
     expire_duration_days: 0,
     expire_duration_hours: 0,
     expire_duration_minutes: 0,
     token_group_id: 0,
->>>>>>> security-improvements
   });
 
   const handleCancel = () => {
@@ -194,13 +187,7 @@ const EditTokenModal = (props) => {
         data.model_limits = [];
       }
       // 激活式令牌回显
-<<<<<<< HEAD
-      data.activate_on_first_use = data.expire_duration > 0;
-      // 从 expire_duration（秒）反推天/小时/分钟
-      if (data.expire_duration > 0) {
-=======
       if (data.type === 1 && data.expire_duration > 0) {
->>>>>>> security-improvements
         const totalSeconds = data.expire_duration;
         data.expire_duration_days = Math.floor(totalSeconds / (24 * 60 * 60));
         const remainingAfterDays = totalSeconds % (24 * 60 * 60);
@@ -267,23 +254,15 @@ const EditTokenModal = (props) => {
     const minutes = parseInt(values.expire_duration_minutes) || 0;
     const totalSeconds = days * 24 * 60 * 60 + hours * 60 * 60 + minutes * 60;
 
-<<<<<<< HEAD
-    let { activate_on_first_use, tokenCount: _tc, expire_duration_days, expire_duration_hours, expire_duration_minutes, ...localInputs } = values;
-    if (activate_on_first_use && totalSeconds > 0) {
-=======
     let { tokenCount: _tc, expire_duration_days, expire_duration_hours, expire_duration_minutes, ...localInputs } = values;
     if (localInputs.type === 1 && totalSeconds > 0) {
->>>>>>> security-improvements
       // 激活式令牌：过期时间由首次使用时动态计算，这里设为 -1
       localInputs.expired_time = -1;
       localInputs.expire_duration = totalSeconds;
     } else {
       // 非激活式令牌：清空 expire_duration
       localInputs.expire_duration = 0;
-<<<<<<< HEAD
-=======
       localInputs.type = 0;
->>>>>>> security-improvements
     }
 
     if (isEdit) {
@@ -315,23 +294,14 @@ const EditTokenModal = (props) => {
       const count = parseInt(values.tokenCount, 10) || 1;
       let successCount = 0;
       for (let i = 0; i < count; i++) {
-<<<<<<< HEAD
-        let { tokenCount: _tc2, expire_duration_days: _d, expire_duration_hours: _h, expire_duration_minutes: _m, activate_on_first_use: _aof, ...loopLocalInputs } = values;
-        // 重新处理每个循环的激活逻辑
-        if (activate_on_first_use && totalSeconds > 0) {
-=======
         let { tokenCount: _tc2, expire_duration_days: _d, expire_duration_hours: _h, expire_duration_minutes: _m, ...loopLocalInputs } = values;
         // 重新处理每个循环的激活逻辑
         if (loopLocalInputs.type === 1 && totalSeconds > 0) {
->>>>>>> security-improvements
           loopLocalInputs.expired_time = -1;
           loopLocalInputs.expire_duration = totalSeconds;
         } else {
           loopLocalInputs.expire_duration = 0;
-<<<<<<< HEAD
-=======
           loopLocalInputs.type = 0;
->>>>>>> security-improvements
         }
         const baseName =
           values.name.trim() === '' ? 'default' : values.name.trim();
@@ -509,81 +479,6 @@ const EditTokenModal = (props) => {
                       )}
                     />
                   </Col>
-<<<<<<< HEAD
-                  <Col xs={24} sm={24} md={24} lg={10} xl={10}>
-                    <Form.DatePicker
-                      field='expired_time'
-                      label={t('过期时间')}
-                      type='dateTime'
-                      placeholder={
-                        values.activate_on_first_use
-                          ? t('激活式令牌自动计算')
-                          : t('请选择过期时间')
-                      }
-                      disabled={values.activate_on_first_use}
-                      rules={[
-                        { required: !values.activate_on_first_use, message: t('请选择过期时间') },
-                        {
-                          validator: (rule, value) => {
-                            if (values.activate_on_first_use) return Promise.resolve();
-                            // 允许 -1 表示永不过期，也允许空值在必填校验时被拦截
-                            if (value === -1 || !value)
-                              return Promise.resolve();
-                            const time = Date.parse(value);
-                            if (isNaN(time)) {
-                              return Promise.reject(t('过期时间格式错误！'));
-                            }
-                            if (time <= Date.now()) {
-                              return Promise.reject(
-                                t('过期时间不能早于当前时间！'),
-                              );
-                            }
-                            return Promise.resolve();
-                          },
-                        },
-                      ]}
-                      showClear
-                      style={{ width: '100%' }}
-                    />
-                  </Col>
-                  <Col xs={24} sm={24} md={24} lg={14} xl={14}>
-                    <Form.Slot label={t('过期时间快捷设置')}>
-                      <Space wrap>
-                        <Button
-                          theme='light'
-                          type='primary'
-                          disabled={values.activate_on_first_use}
-                          onClick={() => setExpiredTime(0, 0, 0, 0)}
-                        >
-                          {t('永不过期')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          disabled={values.activate_on_first_use}
-                          onClick={() => setExpiredTime(1, 0, 0, 0)}
-                        >
-                          {t('一个月')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          disabled={values.activate_on_first_use}
-                          onClick={() => setExpiredTime(0, 1, 0, 0)}
-                        >
-                          {t('一天')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          onClick={() => setExpiredTime(0, 0, 1, 0)}
-                          disabled={values.activate_on_first_use}
-                        >
-                          {t('一小时')}
-                        </Button>
-                      </Space>
-                    </Form.Slot>
-=======
                   <Col span={24}>
                     <Form.Select
                       field='type'
@@ -602,7 +497,6 @@ const EditTokenModal = (props) => {
                         {t('激活式令牌')}
                       </Form.Select.Option>
                     </Form.Select>
->>>>>>> security-improvements
                   </Col>
                   {/* 普通令牌：显示日期选择器 */}
                   {values.type === 0 && (
@@ -830,119 +724,6 @@ const EditTokenModal = (props) => {
                         '令牌的额度仅用于限制令牌本身的最大额度使用量，实际的使用受到账户的剩余额度限制',
                       )}
                     />
-                  </Col>
-                </Row>
-              </Card>
-
-              {/* 激活设置 */}
-              <Card className='!rounded-2xl shadow-sm border-0'>
-                <div className='flex items-center mb-2'>
-                  <Avatar size='small' color='cyan' className='mr-2 shadow-md'>
-                    <IconKey size={16} />
-                  </Avatar>
-                  <div>
-                    <Text className='text-lg font-medium'>{t('激活设置')}</Text>
-                    <div className='text-xs text-gray-600'>
-                      {t('设置令牌为激活式：首次使用后才开始计时')}
-                    </div>
-                  </div>
-                </div>
-                <Row gutter={12}>
-                  <Col span={24}>
-                    <Form.Switch
-                      field='activate_on_first_use'
-                      label={t('激活式令牌')}
-                      size='default'
-                      extraText={t(
-                        '开启后，令牌在首次调用API时才会激活并开始计算有效期',
-                      )}
-                    />
-                  </Col>
-                  <Col span={24}>
-                    <Form.Slot label={t('有效期设置')}>
-                      <Space wrap align='start'>
-                        <Form.InputNumber
-                          field='expire_duration_days'
-                          label={t('天')}
-                          min={0}
-                          disabled={!values.activate_on_first_use}
-                          style={{ width: 80 }}
-                          rules={[{ required: values.activate_on_first_use, message: t('请输入天数') }]}
-                        />
-                        <Form.InputNumber
-                          field='expire_duration_hours'
-                          label={t('小时')}
-                          min={0}
-                          max={23}
-                          disabled={!values.activate_on_first_use}
-                          style={{ width: 80 }}
-                          rules={[{ required: values.activate_on_first_use, message: t('请输入小时') }]}
-                        />
-                        <Form.InputNumber
-                          field='expire_duration_minutes'
-                          label={t('分钟')}
-                          min={0}
-                          max={59}
-                          disabled={!values.activate_on_first_use}
-                          style={{ width: 80 }}
-                          rules={[{ required: values.activate_on_first_use, message: t('请输入分钟') }]}
-                        />
-                      </Space>
-                    </Form.Slot>
-                  </Col>
-                  <Col span={24}>
-                    <Form.Slot label={t('快捷设置')}>
-                      <Space wrap>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          disabled={!values.activate_on_first_use}
-                          onClick={() => {
-                            formApiRef.current?.setValue('expire_duration_days', 30);
-                            formApiRef.current?.setValue('expire_duration_hours', 0);
-                            formApiRef.current?.setValue('expire_duration_minutes', 0);
-                          }}
-                        >
-                          {t('一个月')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          disabled={!values.activate_on_first_use}
-                          onClick={() => {
-                            formApiRef.current?.setValue('expire_duration_days', 1);
-                            formApiRef.current?.setValue('expire_duration_hours', 0);
-                            formApiRef.current?.setValue('expire_duration_minutes', 0);
-                          }}
-                        >
-                          {t('一天')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          disabled={!values.activate_on_first_use}
-                          onClick={() => {
-                            formApiRef.current?.setValue('expire_duration_days', 0);
-                            formApiRef.current?.setValue('expire_duration_hours', 1);
-                            formApiRef.current?.setValue('expire_duration_minutes', 0);
-                          }}
-                        >
-                          {t('一小时')}
-                        </Button>
-                        <Button
-                          theme='light'
-                          type='tertiary'
-                          disabled={!values.activate_on_first_use}
-                          onClick={() => {
-                            formApiRef.current?.setValue('expire_duration_days', 0);
-                            formApiRef.current?.setValue('expire_duration_hours', 0);
-                            formApiRef.current?.setValue('expire_duration_minutes', 30);
-                          }}
-                        >
-                          {t('30分钟')}
-                        </Button>
-                      </Space>
-                    </Form.Slot>
                   </Col>
                 </Row>
               </Card>
