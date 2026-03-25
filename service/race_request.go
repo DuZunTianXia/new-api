@@ -739,17 +739,29 @@ func RaceRequestHelper(
 	// 处理响应（包含计费）
 	handleErr := handleRaceResponse(c, result, relayInfo, priceData)
 
-	// 不需要显式取消其他请求，它们会在请求失败或超时后自然完成
-	// 等待所有 goroutine 完成（最多1秒）
+	// 等待所有 goroutine 完成，使用更合理的超时时间
+	// 超时时间设置为竞速超时的 2 倍，确保有足够时间清理资源
+	cleanupTimeout := time.Duration(raceSetting.TimeoutMs*2) * time.Millisecond
+	if cleanupTimeout < 3*time.Second {
+		cleanupTimeout = 3 * time.Second // 最少 3 秒
+	}
+	if cleanupTimeout > 10*time.Second {
+		cleanupTimeout = 10 * time.Second // 最多 10 秒
+	}
+
 	doneChan := make(chan struct{})
 	go func() {
 		raceRequestor.WaitGroup.Wait()
 		close(doneChan)
 	}()
+
 	select {
 	case <-doneChan:
-	case <-time.After(1 * time.Second):
-		logger.LogError(c, "Timeout waiting for race request goroutines to finish")
+		logger.LogInfo(c, "Race request: all goroutines completed successfully")
+	case <-time.After(cleanupTimeout):
+		logger.LogError(c, fmt.Sprintf("Race request: timeout waiting for goroutines to finish after %v", cleanupTimeout))
+		// 即使超时也继续，避免阻塞主流程
+		// goroutine 会在后台自然完成
 	}
 
 	return handleErr
