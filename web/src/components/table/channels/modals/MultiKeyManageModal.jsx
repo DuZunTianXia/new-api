@@ -56,6 +56,14 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
   const [keyStatusList, setKeyStatusList] = useState([]);
   const [operationLoading, setOperationLoading] = useState({});
 
+  // Batch test keys states
+  const [testingKeys, setTestingKeys] = useState(false);
+  const [keyTestResults, setKeyTestResults] = useState(null); // Test results map: key_index -> result
+  const [selectedTestModel, setSelectedTestModel] = useState(''); // Selected model for batch test
+
+  // Get available models from channel
+  const channelModels = channel?.models?.split(',').map((m) => m.trim()).filter((m) => m) || [];
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -192,6 +200,42 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
       showError(t('启用所有密钥失败'));
     } finally {
       setOperationLoading((prev) => ({ ...prev, enable_all: false }));
+    }
+  };
+
+  // Batch test all keys
+  const handleBatchTestKeys = async () => {
+    if (!channel?.id) return;
+
+    setTestingKeys(true);
+    setKeyTestResults(null);
+
+    try {
+      // Build URL with optional model parameter
+      let url = `/api/channel/test_keys/${channel.id}`;
+      if (selectedTestModel) {
+        url += `?model=${encodeURIComponent(selectedTestModel)}`;
+      }
+
+      const res = await API.get(url);
+
+      if (res.data.success) {
+        setKeyTestResults(res.data.test_results);
+        showSuccess(
+          t('批量测试完成：成功 ${success} 个，失败 ${failed} 个')
+            .replace('${success}', res.data.test_results.filter((r) => r.success).length)
+            .replace('${failed}', res.data.test_results.filter((r) => !r.success).length),
+        );
+        // Refresh key status after test
+        await loadKeyStatus(currentPage, pageSize);
+        onRefresh && onRefresh();
+      } else {
+        showError(res.data.message || t('批量测试密钥失败'));
+      }
+    } catch (error) {
+      showError(t('批量测试密钥失败') + ': ' + (error.message || ''));
+    } finally {
+      setTestingKeys(false);
     }
   };
 
@@ -360,21 +404,35 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
     {
       title: t('索引'),
       dataIndex: 'index',
+      width: 60,
       render: (text) => `#${text}`,
     },
-    // {
-    //   title: t('密钥预览'),
-    //   dataIndex: 'key_preview',
-    //   render: (text) => (
-    //     <Text code style={{ fontSize: '12px' }}>
-    //       {text}
-    //     </Text>
-    //   ),
-    // },
     {
       title: t('状态'),
       dataIndex: 'status',
+      width: 80,
       render: (status) => renderStatusTag(status),
+    },
+    {
+      title: t('测试结果'),
+      dataIndex: 'index',
+      width: 180,
+      render: (index) => {
+        const result = keyTestResults?.find((r) => r.key_index === index);
+        if (!result) {
+          return <Text type='quaternary'>-</Text>;
+        }
+        return (
+          <Space spacing={4}>
+            <Tag color={result.success ? 'green' : 'red'} size='small'>
+              {result.success ? t('成功') : t('失败')}
+            </Tag>
+            <Text type='tertiary' size='small'>
+              {result.time.toFixed(2)}s
+            </Text>
+          </Space>
+        );
+      },
     },
     {
       title: t('禁用原因'),
@@ -638,6 +696,29 @@ const MultiKeyManageModal = ({ visible, onCancel, channel, onRefresh }) => {
                           loading={loading}
                         >
                           {t('刷新')}
+                        </Button>
+                        <Select
+                          size='small'
+                          value={selectedTestModel}
+                          onChange={(value) => setSelectedTestModel(value)}
+                          placeholder={t('选择测试模型')}
+                          style={{ minWidth: 150 }}
+                          filter
+                          allowClear
+                        >
+                          {channelModels.map((model) => (
+                            <Select.Option key={model} value={model}>
+                              {model}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                        <Button
+                          size='small'
+                          type='primary'
+                          onClick={handleBatchTestKeys}
+                          loading={testingKeys}
+                        >
+                          {t('批量测试密钥')}
                         </Button>
                         {manualDisabledCount + autoDisabledCount > 0 && (
                           <Popconfirm

@@ -30,6 +30,7 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import { fetchTokenKey as fetchTokenKeyById } from '../../helpers/token';
+import { fetchTokenGroups } from '../../helpers/token-group';
 
 export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const { t } = useTranslation();
@@ -42,6 +43,9 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [searching, setSearching] = useState(false);
   const [searchMode, setSearchMode] = useState(false); // 是否处于搜索结果视图
+  const [groups, setGroups] = useState([]); // 渠道分组
+  const [tokenGroups, setTokenGroups] = useState([]); // 令牌分组
+  const [selectedTokenGroup, setSelectedTokenGroup] = useState(null); // 当前选中的令牌分组
 
   // Selection state
   const [selectedKeys, setSelectedKeys] = useState([]);
@@ -110,8 +114,14 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
 
   // Refresh function
   const refresh = async (page = activePage) => {
-    await loadTokens(page);
+    if (selectedTokenGroup) {
+      await loadTokensByGroup(selectedTokenGroup, page);
+    } else {
+      await loadTokens(page);
+    }
     setSelectedKeys([]);
+    // 刷新分组列表以更新令牌数量
+    await loadTokenGroups();
   };
 
   // Copy text function
@@ -325,6 +335,8 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const handlePageChange = (page) => {
     if (searchMode) {
       searchTokens(page, pageSize).then();
+    } else if (selectedTokenGroup) {
+      loadTokensByGroup(selectedTokenGroup, page, pageSize).then();
     } else {
       loadTokens(page, pageSize).then();
     }
@@ -334,6 +346,8 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     setPageSize(size);
     if (searchMode) {
       await searchTokens(1, size);
+    } else if (selectedTokenGroup) {
+      await loadTokensByGroup(selectedTokenGroup, 1, size);
     } else {
       await loadTokens(1, size);
     }
@@ -417,12 +431,68 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
 
   // Initialize data
   useEffect(() => {
-    loadTokens(1)
-      .then()
-      .catch((reason) => {
-        showError(reason);
-      });
+    const initData = async () => {
+      await loadTokens(1);
+      await loadGroups();
+      await loadTokenGroups();
+    };
+    initData().catch((reason) => {
+      showError(reason);
+    });
   }, [pageSize]);
+
+  // Load channel groups
+  const loadGroups = async () => {
+    try {
+      const res = await API.get('/api/user/self/groups');
+      const { success, data } = res.data;
+      if (success) {
+        const localGroupOptions = Object.entries(data || {}).map(([group, info]) => ({
+          label: info.desc || group,
+          value: group,
+          ratio: info.ratio,
+        }));
+        setGroups(localGroupOptions);
+      }
+    } catch (error) {
+      console.error('Failed to load groups:', error);
+    }
+  };
+
+  // Load token groups
+  const loadTokenGroups = async () => {
+    try {
+      const data = await fetchTokenGroups();
+      setTokenGroups(data || []);
+    } catch (error) {
+      console.error('Failed to load token groups:', error);
+    }
+  };
+
+  // Load tokens by group
+  const loadTokensByGroup = async (groupId, page = 1, size = pageSize) => {
+    setLoading(true);
+    setSearchMode(false);
+    setSelectedTokenGroup(groupId);
+    try {
+      const res = await API.get(`/api/token/?p=${page}&size=${size}&token_group_id=${groupId}`);
+      const { success, message, data } = res.data;
+      if (success) {
+        syncPageData(data);
+      } else {
+        showError(message);
+      }
+    } catch (error) {
+      showError(error.message);
+    }
+    setLoading(false);
+  };
+
+  // Clear group filter and load all tokens
+  const clearGroupFilter = async () => {
+    setSelectedTokenGroup(null);
+    await loadTokens(1);
+  };
 
   return {
     // Basic state
@@ -432,6 +502,13 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     tokenCount,
     pageSize,
     searching,
+    groups,
+    tokenGroups,
+    selectedTokenGroup,
+    setSelectedTokenGroup,
+    loadTokenGroups,
+    loadTokensByGroup,
+    clearGroupFilter,
 
     // Selection state
     selectedKeys,

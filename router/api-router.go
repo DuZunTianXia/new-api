@@ -30,6 +30,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/about", controller.GetAbout)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
+		apiRouter.GET("/token/status", middleware.CriticalRateLimit(), controller.GetActivationTokenStatus)
 		apiRouter.GET("/pricing", middleware.TryUserAuth(), controller.GetPricing)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
 		apiRouter.GET("/reset_password", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.SendPasswordResetEmail)
@@ -211,6 +212,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.DELETE("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.DeleteChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
+			channelRoute.GET("/test_keys/:id", controller.TestChannelKeys)
 			channelRoute.GET("/update_balance", controller.UpdateAllChannelsBalance)
 			channelRoute.GET("/update_balance/:id", controller.UpdateChannelBalance)
 			channelRoute.POST("/", controller.AddChannel)
@@ -254,6 +256,23 @@ func SetApiRouter(router *gin.Engine) {
 			tokenRoute.PUT("/", controller.UpdateToken)
 			tokenRoute.DELETE("/:id", controller.DeleteToken)
 			tokenRoute.POST("/batch", controller.DeleteTokenBatch)
+		}
+
+		// Token group routes
+		tokenGroupRoute := apiRouter.Group("/token-group")
+		tokenGroupRoute.Use(middleware.UserAuth())
+		{
+			tokenGroupRoute.GET("/", controller.GetTokenGroups)
+			tokenGroupRoute.GET("/:id", controller.GetTokenGroup)
+			tokenGroupRoute.GET("/:id/tokens", controller.GetTokenGroupTokens)
+			tokenGroupRoute.POST("/", controller.AddTokenGroup)
+			tokenGroupRoute.PUT("/", controller.UpdateTokenGroup)
+			tokenGroupRoute.DELETE("/:id", controller.DeleteTokenGroup)
+			// 批量操作
+			tokenGroupRoute.POST("/batch/duration", controller.BatchAddDuration)
+			tokenGroupRoute.POST("/batch/quota", controller.BatchAddQuota)
+			tokenGroupRoute.POST("/batch/status", controller.BatchSetTokensStatus)
+			tokenGroupRoute.POST("/batch/expired-time", controller.BatchSetExpiredTime)
 		}
 
 		usageRoute := apiRouter.Group("/usage")

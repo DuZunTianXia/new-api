@@ -27,6 +27,7 @@ import {
   renderQuotaWithPrompt,
   getModelCategories,
   selectFilter,
+  fetchTokenGroups,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import {
@@ -61,7 +62,8 @@ const EditTokenModal = (props) => {
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
   const [models, setModels] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [groups, setGroups] = useState([]); // 渠道分组
+  const [tokenGroups, setTokenGroups] = useState([]); // 令牌分组
   const isEdit = props.editingToken.id !== undefined;
 
   const getInitValues = () => ({
@@ -80,6 +82,7 @@ const EditTokenModal = (props) => {
     expire_duration_days: 0,
     expire_duration_hours: 0,
     expire_duration_minutes: 0,
+    token_group_id: 0,
   });
 
   const handleCancel = () => {
@@ -154,6 +157,22 @@ const EditTokenModal = (props) => {
     }
   };
 
+  const loadTokenGroups = async () => {
+    try {
+      const data = await fetchTokenGroups();
+      const localTokenGroupOptions = (data || []).map((tg) => ({
+        label: tg.name,
+        value: tg.id,
+        channelGroup: tg.channel_group,
+      }));
+      setTokenGroups(localTokenGroupOptions);
+      return localTokenGroupOptions;
+    } catch (error) {
+      console.error('Failed to load token groups:', error);
+      return [];
+    }
+  };
+
   const loadToken = async () => {
     setLoading(true);
     let res = await API.get(`/api/token/${props.editingToken.id}`);
@@ -185,27 +204,35 @@ const EditTokenModal = (props) => {
     setLoading(false);
   };
 
+  // 加载数据并初始化表单
   useEffect(() => {
-    if (formApiRef.current) {
-      if (!isEdit) {
-        formApiRef.current.setValues(getInitValues());
-      }
+    if (!props.visiable) {
+      formApiRef.current?.reset();
+      return;
     }
+
+    const initForm = async () => {
+      if (isEdit) {
+        await loadToken();
+      } else {
+        // 新建时，先加载分组数据
+        const groups = await loadTokenGroups();
+        // 然后设置表单值（确保 Select 选项已加载）
+        const initValues = getInitValues();
+        if (props.defaultTokenGroupId > 0) {
+          initValues.token_group_id = props.defaultTokenGroupId;
+        }
+        // 使用 setTimeout 确保 React 状态更新完成后再设置表单值
+        setTimeout(() => {
+          formApiRef.current?.setValues(initValues);
+        }, 0);
+      }
+    };
+
     loadModels();
     loadGroups();
-  }, [props.editingToken.id]);
-
-  useEffect(() => {
-    if (props.visiable) {
-      if (isEdit) {
-        loadToken();
-      } else {
-        formApiRef.current?.setValues(getInitValues());
-      }
-    } else {
-      formApiRef.current?.reset();
-    }
-  }, [props.visiable, props.editingToken.id]);
+    initForm();
+  }, [props.visiable, props.editingToken.id, props.defaultTokenGroupId]);
 
   const generateRandomSuffix = () => {
     const characters =
@@ -397,21 +424,42 @@ const EditTokenModal = (props) => {
                     />
                   </Col>
                   <Col span={24}>
+                    {tokenGroups.length > 0 ? (
+                      <Form.Select
+                        field='token_group_id'
+                        label={t('令牌分组')}
+                        placeholder={t('请选择令牌分组')}
+                        optionList={tokenGroups}
+                        showClear
+                        style={{ width: '100%' }}
+                        extraText={t('选择令牌分组后，该令牌将使用分组关联的渠道分组')}
+                      />
+                    ) : (
+                      <Form.Select
+                        placeholder={t('暂无令牌分组，请先创建分组')}
+                        disabled
+                        label={t('令牌分组')}
+                        style={{ width: '100%' }}
+                      />
+                    )}
+                  </Col>
+                  <Col span={24}>
                     {groups.length > 0 ? (
                       <Form.Select
                         field='group'
-                        label={t('令牌分组')}
-                        placeholder={t('令牌分组，默认为用户的分组')}
+                        label={t('渠道分组')}
+                        placeholder={t('渠道分组，默认为用户的分组')}
                         optionList={groups}
                         renderOptionItem={renderGroupOption}
                         showClear
                         style={{ width: '100%' }}
+                        extraText={t('直接选择渠道分组，将覆盖令牌分组的设置')}
                       />
                     ) : (
                       <Form.Select
                         placeholder={t('管理员未设置用户可选分组')}
                         disabled
-                        label={t('令牌分组')}
+                        label={t('渠道分组')}
                         style={{ width: '100%' }}
                       />
                     )}

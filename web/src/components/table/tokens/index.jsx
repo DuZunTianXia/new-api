@@ -25,7 +25,18 @@ import {
   Toast,
   Typography,
   Select,
+  Card,
+  Tag,
+  List,
+  Spin,
+  Empty,
 } from '@douyinfe/semi-ui';
+import {
+  IconPlus,
+  IconSetting,
+  IconFolder,
+  IconFolderOpen,
+} from '@douyinfe/semi-icons';
 import {
   API,
   showError,
@@ -39,6 +50,7 @@ import TokensFilters from './TokensFilters';
 import TokensDescription from './TokensDescription';
 import EditTokenModal from './modals/EditTokenModal';
 import CCSwitchModal from './modals/CCSwitchModal';
+import TokenGroupSidebar from './TokenGroupSidebar';
 import { useTokensData } from '../../../hooks/tokens/useTokensData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -360,6 +372,14 @@ function TokensPage() {
     batchCopyTokens,
     batchDeleteTokens,
 
+    // Groups state
+    groups,
+    tokenGroups,
+    selectedTokenGroup,
+    loadTokensByGroup,
+    clearGroupFilter,
+    loadTokenGroups,
+
     // Filters state
     formInitValues,
     setFormApi,
@@ -375,13 +395,29 @@ function TokensPage() {
     t,
   } = tokensData;
 
+  // 快捷创建令牌的状态
+  const [quickCreateGroupId, setQuickCreateGroupId] = useState(null);
+
+  // 处理快捷创建令牌
+  const handleQuickCreateToken = (groupId) => {
+    // 先重置 editingToken，确保是新建模式
+    setEditingToken({ id: undefined });
+    // 设置分组ID（大于0才有效）
+    setQuickCreateGroupId(groupId > 0 ? groupId : null);
+    setShowEdit(true);
+  };
+
   return (
     <>
       <EditTokenModal
         refresh={refresh}
         editingToken={editingToken}
         visiable={showEdit}
-        handleClose={closeEdit}
+        handleClose={() => {
+          closeEdit();
+          setQuickCreateGroupId(null);
+        }}
+        defaultTokenGroupId={quickCreateGroupId}
       />
 
       <CCSwitchModal
@@ -391,51 +427,72 @@ function TokensPage() {
         modelOptions={modelOptions}
       />
 
-      <CardPro
-        type='type1'
-        descriptionArea={
-          <TokensDescription
-            compactMode={compactMode}
-            setCompactMode={setCompactMode}
+      <div className='flex gap-4'>
+        {/* 左侧分组侧边栏 - 集成分组管理功能 */}
+        <div className='w-72 flex-shrink-0 hidden lg:block'>
+          <TokenGroupSidebar
             t={t}
+            loading={loading}
+            tokenGroups={tokenGroups}
+            selectedTokenGroup={selectedTokenGroup}
+            tokenCount={tokensData.tokenCount}
+            groups={groups || []}
+            loadTokenGroups={loadTokenGroups}
+            loadTokensByGroup={loadTokensByGroup}
+            clearGroupFilter={clearGroupFilter}
+            onQuickCreateToken={handleQuickCreateToken}
           />
-        }
-        actionsArea={
-          <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
-            <TokensActions
-              selectedKeys={selectedKeys}
-              setEditingToken={setEditingToken}
-              setShowEdit={setShowEdit}
-              batchCopyTokens={batchCopyTokens}
-              batchDeleteTokens={batchDeleteTokens}
-              t={t}
-            />
+        </div>
 
-            <div className='w-full md:w-full lg:w-auto order-1 md:order-2'>
-              <TokensFilters
-                formInitValues={formInitValues}
-                setFormApi={setFormApi}
-                searchTokens={searchTokens}
-                loading={loading}
-                searching={searching}
+        {/* 右侧主内容区 */}
+        <div className='flex-1 min-w-0'>
+          <CardPro
+            type='type1'
+            descriptionArea={
+              <TokensDescription
+                compactMode={compactMode}
+                setCompactMode={setCompactMode}
                 t={t}
               />
-            </div>
-          </div>
-        }
-        paginationArea={createCardProPagination({
-          currentPage: tokensData.activePage,
-          pageSize: tokensData.pageSize,
-          total: tokensData.tokenCount,
-          onPageChange: tokensData.handlePageChange,
-          onPageSizeChange: tokensData.handlePageSizeChange,
-          isMobile: isMobile,
-          t: tokensData.t,
-        })}
-        t={tokensData.t}
-      >
-        <TokensTable {...tokensData} />
-      </CardPro>
+            }
+            actionsArea={
+              <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
+                <TokensActions
+                  selectedKeys={selectedKeys}
+                  setEditingToken={setEditingToken}
+                  setShowEdit={setShowEdit}
+                  batchCopyTokens={batchCopyTokens}
+                  batchDeleteTokens={batchDeleteTokens}
+                  t={t}
+                />
+
+                <div className='w-full md:w-full lg:w-auto order-1 md:order-2'>
+                  <TokensFilters
+                    formInitValues={formInitValues}
+                    setFormApi={setFormApi}
+                    searchTokens={searchTokens}
+                    loading={loading}
+                    searching={searching}
+                    t={t}
+                  />
+                </div>
+              </div>
+            }
+            paginationArea={createCardProPagination({
+              currentPage: tokensData.activePage,
+              pageSize: tokensData.pageSize,
+              total: tokensData.tokenCount,
+              onPageChange: tokensData.handlePageChange,
+              onPageSizeChange: tokensData.handlePageSizeChange,
+              isMobile: isMobile,
+              t: tokensData.t,
+            })}
+            t={tokensData.t}
+          >
+            <TokensTable {...tokensData} />
+          </CardPro>
+        </div>
+      </div>
     </>
   );
 }
